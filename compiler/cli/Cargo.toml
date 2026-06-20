@@ -1,0 +1,13 @@
+[package]
+name = "n0ne"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.4", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
+lexer = { path = "../lexer" }
+parser = { path = "../parser" }
+ast = { path = "../ast" }
+sema = { path = "../sema" }
+codegen_llvm = { path = "../codegen/llvm" }
+formatter = { path = "../../tools/formatter" }
