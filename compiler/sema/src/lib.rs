@@ -71,10 +71,58 @@ impl SymbolTable {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Symbol {
+    pub name: String,
+    pub info: SymbolInfo,
+}
+
+impl Symbol {
+    pub fn fn_sym(name: &str, params: Vec<Type>, ret_type: Type) -> Self {
+        Self {
+            name: name.to_string(),
+            info: SymbolInfo::Function {
+                params,
+                ret_type: Some(ret_type),
+            },
+        }
+    }
+}
+
+pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
+    match module {
+        "io" => Some(vec![
+            Symbol::fn_sym("show", vec![Type::Basic("unknown".to_string())], Type::Basic("void".to_string())),
+            Symbol::fn_sym("read", vec![], Type::Basic("string".to_string())),
+            Symbol::fn_sym("show_err", vec![Type::Basic("unknown".to_string())], Type::Basic("void".to_string())),
+        ]),
+        "fs" => Some(vec![
+            Symbol::fn_sym("read", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym("write", vec![Type::Basic("string".to_string()), Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("void".to_string())))),
+            Symbol::fn_sym("exists", vec![Type::Basic("string".to_string())], Type::Basic("bool".to_string())),
+            Symbol::fn_sym("delete", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("void".to_string())))),
+            Symbol::fn_sym("mkdir", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("void".to_string())))),
+            Symbol::fn_sym("list", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::List(Box::new(Type::Basic("string".to_string())))))),
+        ]),
+        "json" => Some(vec![
+            Symbol::fn_sym("encode", vec![Type::Basic("unknown".to_string())], Type::Basic("string".to_string())),
+            Symbol::fn_sym("decode", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("unknown".to_string())))),
+        ]),
+        "http" => Some(vec![
+            Symbol::fn_sym("get", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym("post", vec![Type::Basic("string".to_string()), Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
+        ]),
+        _ => None,
+    }
+}
+
 pub struct TypeChecker {
     pub table: SymbolTable,
     pub errors: Vec<SemanticError>,
     current_fn_return_type: Option<Type>,
+    pub imported_modules: HashMap<String, HashMap<String, SymbolInfo>>,
+    pub import_stack: Vec<std::path::PathBuf>,
+    pub current_file: Option<std::path::PathBuf>,
 }
 
 impl TypeChecker {
@@ -83,6 +131,9 @@ impl TypeChecker {
             table: SymbolTable::new(),
             errors: Vec::new(),
             current_fn_return_type: None,
+            imported_modules: HashMap::new(),
+            import_stack: Vec::new(),
+            current_file: None,
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())],
@@ -124,6 +175,13 @@ impl TypeChecker {
     }
 
     pub fn check_program(&mut self, prog: &Program) {
+        // Pass 0: Handle imports (UseDecl)
+        for decl in &prog.decls {
+            if let TopLevelDecl::UseDecl(u) = decl {
+                self.check_use_decl(u);
+            }
+        }
+
         // Pass 1: Forward declarations
         for decl in &prog.decls {
             match decl {
@@ -169,6 +227,156 @@ impl TypeChecker {
                 TopLevelDecl::TaskDecl(t) => self.check_task_decl(t),
                 TopLevelDecl::ConstDecl(c) => self.check_const_decl(c),
                 _ => {}
+            }
+        }
+    }
+
+    fn get_module_name(&self, path: &str) -> String {
+        std::path::Path::new(path)
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
+    }
+
+    fn resolve_local_path(&self, import_path: &str) -> Result<std::path::PathBuf, std::io::Error> {
+        let base_dir = if let Some(cf) = &self.current_file {
+            cf.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::env::current_dir().unwrap())
+        } else {
+            std::env::current_dir()?
+        };
+        
+        let file_name = if import_path.ends_with(".n0") {
+            import_path.to_string()
+        } else {
+            format!("{}.n0", import_path)
+        };
+
+        let resolved = base_dir.join(file_name);
+        match resolved.canonicalize() {
+            Ok(p) => Ok(p),
+            Err(_) => Ok(resolved),
+        }
+    }
+
+    fn check_use_decl(&mut self, u: &UseDecl) {
+        let module_name = self.get_module_name(&u.path);
+        match u.kind {
+            UseKind::Stdlib => {
+                if let Some(symbols) = get_stdlib_symbols(&u.path) {
+                    let mut mod_symbols = HashMap::new();
+                    for sym in symbols {
+                        mod_symbols.insert(sym.name.clone(), sym.info.clone());
+                        if let Some(items) = &u.items {
+                            if items.contains(&sym.name) {
+                                self.table.insert_global(sym.name.clone(), sym.info.clone());
+                            }
+                        }
+                    }
+                    self.imported_modules.insert(module_name, mod_symbols);
+                } else {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E010".to_string(),
+                        message: format!("unknown module '{}'", u.path),
+                        hint: "available stdlib modules: io fs json http math".to_string(),
+                    });
+                }
+            }
+            UseKind::Local => {
+                let resolved_path = match self.resolve_local_path(&u.path) {
+                    Ok(p) => p,
+                    Err(_) => {
+                        self.errors.push(SemanticError {
+                            line: 0,
+                            column: 0,
+                            code: "E011".to_string(),
+                            message: format!("local module file not found at '{}'", u.path),
+                            hint: "Verify the file path exists.".to_string(),
+                        });
+                        return;
+                    }
+                };
+
+                if !resolved_path.exists() {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E011".to_string(),
+                        message: format!("local module file not found at '{}'", resolved_path.display()),
+                        hint: "Verify the file path exists relative to the importing file.".to_string(),
+                    });
+                    return;
+                }
+
+                if self.import_stack.contains(&resolved_path) {
+                    let mut path_names: Vec<String> = self.import_stack.iter()
+                        .map(|p| p.file_stem().unwrap_or_default().to_string_lossy().to_string())
+                        .collect();
+                    path_names.push(resolved_path.file_stem().unwrap_or_default().to_string_lossy().to_string());
+                    let circular_chain = path_names.join(" -> ");
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E009".to_string(),
+                        message: format!("circular import detected {}", circular_chain),
+                        hint: "Remove the circular dependency chain.".to_string(),
+                    });
+                    return;
+                }
+
+                let content = match std::fs::read_to_string(&resolved_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.errors.push(SemanticError {
+                            line: 0,
+                            column: 0,
+                            code: "E011".to_string(),
+                            message: format!("failed to read local module file '{}': {}", resolved_path.display(), e),
+                            hint: "Check file permissions.".to_string(),
+                        });
+                        return;
+                    }
+                };
+
+                let tokens = lexer::Lexer::tokenize(&content);
+                let mut parser = parser::Parser::new(tokens);
+                let sub_prog = parser.parse();
+
+                let mut sub_checker = TypeChecker::new();
+                sub_checker.current_file = Some(resolved_path.clone());
+                sub_checker.import_stack = self.import_stack.clone();
+                sub_checker.import_stack.push(resolved_path.clone());
+                sub_checker.imported_modules = self.imported_modules.clone();
+
+                sub_checker.check_program(&sub_prog);
+
+                let mut mod_symbols = HashMap::new();
+                if let Some(global_scope) = sub_checker.table.scopes.first() {
+                    for (name, info) in global_scope {
+                        if name != "show" && !name.starts_with("c_") {
+                            mod_symbols.insert(name.clone(), info.clone());
+                            if let Some(items) = &u.items {
+                                if items.contains(name) {
+                                    self.table.insert_global(name.clone(), info.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                self.imported_modules.insert(module_name, mod_symbols);
+                self.errors.extend(sub_checker.errors);
+            }
+            UseKind::Package => {
+                self.errors.push(SemanticError {
+                    line: 0,
+                    column: 0,
+                    code: "E010".to_string(),
+                    message: format!("package imports are not supported yet: '{}'", u.path),
+                    hint: "Use stdlib or local imports.".to_string(),
+                });
             }
         }
     }
@@ -476,6 +684,47 @@ impl TypeChecker {
                         return Type::Basic("unknown".to_string());
                     }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
+                    if let Expr::Ident(mod_name) = &**receiver {
+                        let fn_sig = self.imported_modules.get(mod_name)
+                            .and_then(|mod_syms| mod_syms.get(method_name))
+                            .cloned();
+                        if let Some(SymbolInfo::Function { params, ret_type }) = fn_sig {
+                            if args.len() != params.len() {
+                                self.errors.push(SemanticError {
+                                    line: 0,
+                                    column: 0,
+                                    code: "E004".to_string(),
+                                    message: format!(
+                                        "wrong argument count for function '{}.{}': expected {}, found {}",
+                                        mod_name, method_name, params.len(), args.len()
+                                    ),
+                                    hint: "Pass the correct number of arguments.".to_string(),
+                                });
+                            } else {
+                                for (i, arg) in args.iter().enumerate() {
+                                    let arg_type = self.infer_expr(arg);
+                                    let expected_type = &params[i];
+                                    if &arg_type != expected_type
+                                        && arg_type != Type::Basic("unknown".to_string())
+                                        && expected_type != &Type::Basic("unknown".to_string())
+                                    {
+                                        self.errors.push(SemanticError {
+                                            line: 0,
+                                            column: 0,
+                                            code: "E005".to_string(),
+                                            message: format!(
+                                                "wrong argument type in call to '{}.{}': expected '{:?}', found '{:?}'",
+                                                mod_name, method_name, expected_type, arg_type
+                                            ),
+                                            hint: "Check the parameter types of the function.".to_string(),
+                                        });
+                                    }
+                                }
+                            }
+                            return ret_type.clone().unwrap_or(Type::Basic("void".to_string()));
+                        }
+                    }
+
                     let receiver_ty = self.infer_expr(receiver);
                     let mut arg_types = Vec::new();
                     for arg in args {
@@ -535,7 +784,17 @@ impl TypeChecker {
                 }
                 Type::Basic("unknown".to_string())
             }
-            Expr::FieldAccess { expr: inner, field: _ } => {
+            Expr::FieldAccess { expr: inner, field } => {
+                if let Expr::Ident(mod_name) = &**inner {
+                    if let Some(mod_syms) = self.imported_modules.get(mod_name) {
+                        if let Some(sym_info) = mod_syms.get(field) {
+                            return match sym_info {
+                                SymbolInfo::Variable(t) => t.clone(),
+                                SymbolInfo::Function { ret_type, .. } => ret_type.clone().unwrap_or(Type::Basic("void".to_string())),
+                            };
+                        }
+                    }
+                }
                 self.infer_expr(inner);
                 Type::Basic("unknown".to_string())
             }
