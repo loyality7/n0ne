@@ -63,8 +63,8 @@ impl LLVMGenerator {
     pub(crate) fn get_field_offset(&self, var_type_name: &str, field_name: &str) -> i64 {
         if var_type_name == "result" {
             match field_name {
-                "is_err" => return 8,
-                "value" => return 16,
+                "is_err" | "is_ok" => return 8,
+                "value" | "unwrap" => return 16,
                 "error" => return 24,
                 _ => {}
             }
@@ -73,7 +73,7 @@ impl LLVMGenerator {
             match field_name {
                 "is_some" => return 8,
                 "is_none" => return 16,
-                "value" => return 24,
+                "value" | "unwrap" => return 24,
                 _ => {}
             }
         }

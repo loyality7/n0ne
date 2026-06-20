@@ -106,7 +106,7 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
         ]),
         "json" => Some(vec![
             Symbol::fn_sym("encode", vec![Type::Basic("unknown".to_string())], Type::Basic("string".to_string())),
-            Symbol::fn_sym("decode", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("unknown".to_string())))),
+            Symbol::fn_sym("decode", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string())))))),
         ]),
         "http" => Some(vec![
             Symbol::fn_sym("get", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
@@ -136,6 +136,18 @@ impl TypeChecker {
             current_file: None,
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("unknown".to_string())],
+            ret_type: None,
+        });
+        tc.table.insert_global("print".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("unknown".to_string())],
+            ret_type: None,
+        });
+        tc.table.insert_global("show_err".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("unknown".to_string())],
+            ret_type: None,
+        });
+        tc.table.insert_global("print_err".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())],
             ret_type: None,
         });

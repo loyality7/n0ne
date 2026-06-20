@@ -1,5 +1,5 @@
 mod integration;
-use integration::{compile_and_run, compile_and_run_with_files};
+use integration::{compile_and_run, compile_and_run_with_files, compile_and_run_with_stdin};
 
 #[test]
 fn test_hello_world() {
@@ -120,7 +120,7 @@ fn make_result(should_fail: int) -> result[string]
     return res
 
 task main
-    res = try make_result(0)
+    res = make_result(0)
     if res.is_err
         show("err")
     else
@@ -146,7 +146,7 @@ fn make_result(should_fail: int) -> result[string]
     return res
 
 task main
-    res = try make_result(1)
+    res = make_result(1)
     if res.is_err
         show("err")
     else
@@ -497,3 +497,209 @@ fn test_unknown_stdlib_module_error() {
     let (out, _) = compile_and_run_with_files(files);
     assert!(out.contains("E010") || out.contains("unknown standard library module"));
 }
+
+#[test]
+fn test_fs_write_and_read() {
+    let _ = std::fs::remove_file("write_read_test.txt");
+    let source = r#"
+use io
+use fs
+
+task main
+    content = "hello standard library"
+    try fs.write("write_read_test.txt", content)
+    read_back = try fs.read("write_read_test.txt")
+    io.show(read_back)
+    try fs.delete("write_read_test.txt")
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "hello standard library");
+}
+
+#[test]
+fn test_fs_exists_and_delete() {
+    let _ = std::fs::remove_file("exists_test.txt");
+    let source = r#"
+use io
+use fs
+
+task main
+    try fs.write("exists_test.txt", "content")
+    if fs.exists("exists_test.txt")
+        io.show("exists before delete")
+    try fs.delete("exists_test.txt")
+    if fs.exists("exists_test.txt")
+        io.show("exists after delete")
+    else
+        io.show("does not exist after delete")
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim().replace("\r\n", "\n"), "exists before delete\ndoes not exist after delete");
+}
+
+#[test]
+fn test_fs_mkdir() {
+    let _ = std::fs::remove_dir("test_dir_path");
+    let source = r#"
+use io
+use fs
+
+task main
+    try fs.mkdir("test_dir_path")
+    if fs.exists("test_dir_path")
+        io.show("directory exists")
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "directory exists");
+    let _ = std::fs::remove_dir("test_dir_path");
+}
+
+#[test]
+fn test_fs_list() {
+    let _ = std::fs::remove_file("test_list_dir/file1.txt");
+    let _ = std::fs::remove_file("test_list_dir/file2.txt");
+    let _ = std::fs::remove_dir("test_list_dir");
+    let source = r#"
+use io
+use fs
+
+task main
+    try fs.mkdir("test_list_dir")
+    try fs.write("test_list_dir/file1.txt", "1")
+    try fs.write("test_list_dir/file2.txt", "2")
+    files = try fs.list("test_list_dir")
+    for file in files
+        io.show(file)
+    try fs.delete("test_list_dir/file1.txt")
+    try fs.delete("test_list_dir/file2.txt")
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0, "Compilation/Execution failed. Output was:\n{}", out);
+    let _ = std::fs::remove_dir("test_list_dir");
+    let mut sorted_lines: Vec<&str> = out.lines().collect();
+    sorted_lines.sort();
+    assert_eq!(sorted_lines, vec!["file1.txt", "file2.txt"]);
+}
+
+#[test]
+fn test_fs_error_handling() {
+    let source = r#"
+use io
+use fs
+
+task main
+    result = fs.read("non_existent_file_xyz.txt")
+    if result.is_err
+        io.show(result.error)
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0);
+    assert!(out.contains("file not found") || out.contains("could not"));
+}
+
+#[test]
+fn test_io_stdin_read() {
+    let source = r#"
+use io
+
+task main
+    line = io.read()
+    io.show("stdin read: " + line)
+"#;
+    let (out, code) = compile_and_run_with_stdin(source, "hello stdin input\n");
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "stdin read: hello stdin input");
+}
+
+#[test]
+fn test_json_encode_map() {
+    let source = r#"
+use io
+use json
+
+task main
+    data = {"name": "n0ne", "version": "0.1"}
+    result = json.encode(data)
+    io.show(result)
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0, "Compilation/Execution failed. Output was:\n{}", out);
+    let trimmed = out.trim();
+    assert!(trimmed.contains("\"name\""), "expected name key, got: {}", trimmed);
+    assert!(trimmed.contains("\"n0ne\""), "expected n0ne value, got: {}", trimmed);
+    assert!(trimmed.contains("\"version\""), "expected version key, got: {}", trimmed);
+    assert!(trimmed.contains("\"0.1\""), "expected 0.1 value, got: {}", trimmed);
+}
+
+#[test]
+fn test_json_decode() {
+    let source = r#"
+use io
+use json
+
+task main
+    data = try json.decode("{\"name\": \"n0ne\", \"lang\": \"rust\"}")
+    if data.has("name")
+        io.show("has name")
+    if data.has("lang")
+        io.show("has lang")
+    keys = data.keys()
+    io.show(keys.len().to_string())
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0, "Compilation/Execution failed. Output was:\n{}", out);
+    let lines: Vec<&str> = out.trim().lines().collect();
+    assert!(lines.contains(&"has name"), "expected 'has name', got: {:?}", lines);
+    assert!(lines.contains(&"has lang"), "expected 'has lang', got: {:?}", lines);
+    assert!(lines.contains(&"2"), "expected key count '2', got: {:?}", lines);
+}
+
+#[test]
+fn test_json_encode_string() {
+    let source = r#"
+use io
+use json
+
+task main
+    result = json.encode("hello world")
+    io.show(result)
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0, "Compilation/Execution failed. Output was:\n{}", out);
+    assert_eq!(out.trim(), "\"hello world\"");
+}
+
+#[test]
+fn test_new_syntax_features() {
+    let source = r#"
+fn get_result(ok_val: int) -> result[int]
+    res = c_alloc(32)
+    c_store_int(res, 0, 1)
+    if ok_val == 1
+        c_store_int(res, 8, 0)
+        c_store_int(res, 16, 42)
+    else
+        c_store_int(res, 8, 1)
+        c_store_string(res, 24, "some error")
+    return res
+
+task main
+    print("hello print")
+    res1 = get_result(1)
+    if res1.is_ok
+        print(res1.unwrap())
+    res2 = get_result(0)
+    if res2.is_err
+        print(res2.error)
+"#;
+    let (out, code) = compile_and_run(source);
+    assert_eq!(code, 0, "Compilation/Execution failed. Output was:\n{}", out);
+    let lines: Vec<&str> = out.trim().lines().collect();
+    assert_eq!(lines[0], "hello print");
+    assert_eq!(lines[1], "42");
+    assert_eq!(lines[2], "some error");
+}
+

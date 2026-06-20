@@ -349,8 +349,32 @@ impl LLVMGenerator {
             }
             Expr::CallExpr { callee, args } => {
                 if let Expr::Ident(name) = &**callee {
+                    if name.as_str() == "show_err" || name.as_str() == "print_err" {
+                        if let Some(first) = args.first() {
+                            let arg_reg = self.gen_expr(first);
+                            let arg_ty = self.infer_expr_type(first);
+                            let ptr_reg = match arg_ty {
+                                Type::Basic(n) if n == "string" => arg_reg,
+                                Type::Basic(n) if n == "float" => {
+                                    let r = self.next_reg();
+                                    self.body.push_str(&format!("    {} = call ptr @n0_float_to_string(double {})\n", r, arg_reg));
+                                    r
+                                }
+                                _ => {
+                                    let r = self.next_reg();
+                                    self.body.push_str(&format!("    {} = call ptr @n0_int_to_string(i64 {})\n", r, arg_reg));
+                                    r
+                                }
+                            };
+                            self.body.push_str(&format!("    call void @n0_show_err(ptr {})\n", ptr_reg));
+                            return "0".to_string();
+                        } else {
+                            return "0".to_string();
+                        }
+                    }
+
                     let (mapped_name, is_builtin) = match name.as_str() {
-                        "show" => {
+                        "show" | "print" => {
                             if let Some(first) = args.first() {
                                 let arg_ty = self.infer_expr_type(first);
                                 match arg_ty {
@@ -388,7 +412,9 @@ impl LLVMGenerator {
                             ret_llvm_ty = "void".to_string();
                         }
                     } else {
-                        if name.starts_with("make_") {
+                        if let Some(ret_ty) = self.functions.get(name) {
+                            ret_llvm_ty = self.llvm_type(ret_ty);
+                        } else if name.starts_with("make_") {
                             ret_llvm_ty = "ptr".to_string();
                         } else if name == "ok" || name == "err" || name == "risky" {
                             ret_llvm_ty = "ptr".to_string();
@@ -424,6 +450,7 @@ impl LLVMGenerator {
                                     let (fn_name, arg_llvm_ty) = match arg_ty {
                                         Type::Basic(n) if n == "string" => ("n0_show_string", "ptr"),
                                         Type::Basic(n) if n == "float" => ("n0_show_float", "double"),
+                                        Type::Basic(n) if n == "bool" => ("n0_show_bool", "i64"),
                                         _ => ("n0_show_int", "i64"),
                                     };
                                     self.body.push_str(&format!("    call void @{}({} {})\n", fn_name, arg_llvm_ty, arg_reg));
@@ -449,19 +476,47 @@ impl LLVMGenerator {
                                         self.body.push_str(&format!("    {} = call ptr @n0_int_to_string(i64 {})\n", r, arg_reg));
                                         r
                                     };
-                                    self.body.push_str(&format!("    call void @n0_io_show_err(ptr {})\n", ptr_reg));
+                                    self.body.push_str(&format!("    call void @n0_show_err(ptr {})\n", ptr_reg));
                                     return "0".to_string();
                                 }
 
+                                if mod_name == "json" && method_name == "encode" {
+                                    let first = args.first().unwrap();
+                                    let arg_reg = self.gen_expr(first);
+                                    let arg_ty = self.infer_expr_type(first);
+                                    let r = self.next_reg();
+                                    match &arg_ty {
+                                        Type::Basic(n) if n == "int" => {
+                                            self.body.push_str(&format!("    {} = call ptr @n0_json_encode_int(i64 {})\n", r, arg_reg));
+                                        }
+                                        Type::Basic(n) if n == "float" => {
+                                            self.body.push_str(&format!("    {} = call ptr @n0_json_encode_float(double {})\n", r, arg_reg));
+                                        }
+                                        Type::Basic(n) if n == "bool" => {
+                                            self.body.push_str(&format!("    {} = call ptr @n0_json_encode_bool(i64 {})\n", r, arg_reg));
+                                        }
+                                        Type::List(_) => {
+                                            self.body.push_str(&format!("    {} = call ptr @n0_json_encode_list(ptr {})\n", r, arg_reg));
+                                        }
+                                        Type::Map(_, _) => {
+                                            self.body.push_str(&format!("    {} = call ptr @n0_json_encode_map(ptr {})\n", r, arg_reg));
+                                        }
+                                        _ => {
+                                            // string and unknown types → encode as JSON string
+                                            self.body.push_str(&format!("    {} = call ptr @n0_json_encode_string(ptr {})\n", r, arg_reg));
+                                        }
+                                    }
+                                    return r;
+                                }
+
                                 let (fn_name, ret_llvm_ty) = match (mod_name.as_str(), method_name.as_str()) {
-                                    ("io", "read") => ("n0_io_read", "ptr"),
+                                    ("io", "read") => ("n0_io_read_line", "ptr"),
                                     ("fs", "read") => ("n0_fs_read", "ptr"),
                                     ("fs", "write") => ("n0_fs_write", "ptr"),
-                                    ("fs", "exists") => ("n0_fs_exists", "i64"),
+                                    ("fs", "exists") => ("n0_fs_exists", "i1"),
                                     ("fs", "delete") => ("n0_fs_delete", "ptr"),
                                     ("fs", "mkdir") => ("n0_fs_mkdir", "ptr"),
                                     ("fs", "list") => ("n0_fs_list", "ptr"),
-                                    ("json", "encode") => ("n0_json_encode", "ptr"),
                                     ("json", "decode") => ("n0_json_decode", "ptr"),
                                     ("http", "get") => ("n0_http_get", "ptr"),
                                     ("http", "post") => ("n0_http_post", "ptr"),
@@ -495,6 +550,11 @@ impl LLVMGenerator {
                                         return "0".to_string();
                                     } else {
                                         self.body.push_str(&format!("    {} = call {} @{}({})\n", r, ret_llvm_ty, fn_name, cast_args.join(", ")));
+                                        if ret_llvm_ty == "i1" {
+                                            let zext_r = self.next_reg();
+                                            self.body.push_str(&format!("    {} = zext i1 {} to i64\n", zext_r, r));
+                                            return zext_r;
+                                        }
                                         return r;
                                     }
                                 }
@@ -525,8 +585,17 @@ impl LLVMGenerator {
                         }
                     }
 
-                    let receiver_reg = self.gen_expr(receiver);
                     let receiver_ty = self.infer_expr_type(receiver);
+                    if let Type::Result(_) | Type::Option(_) = &receiver_ty {
+                        if method_name == "is_err" || method_name == "is_ok" || method_name == "error" || method_name == "value" || method_name == "unwrap" || method_name == "is_some" || method_name == "is_none" {
+                            let field_expr = Expr::FieldAccess {
+                                expr: receiver.clone(),
+                                field: method_name.clone(),
+                            };
+                            return self.gen_expr(&field_expr);
+                        }
+                    }
+                    let receiver_reg = self.gen_expr(receiver);
                     let receiver_llvm_ty = self.llvm_type(&receiver_ty);
                     
                     let mut mapped_fn_name = "".to_string();
@@ -716,18 +785,18 @@ impl LLVMGenerator {
                 };
                 let offset = self.get_field_offset(&type_name, field);
 
-                let field_ty = if type_name == "result" && field == "is_err" {
+                let field_ty = if type_name == "result" && (field == "is_err" || field == "is_ok") {
                     Type::Basic("int".to_string())
                 } else if type_name == "result" && field == "error" {
                     Type::Basic("string".to_string())
-                } else if type_name == "result" && field == "value" {
+                } else if type_name == "result" && (field == "value" || field == "unwrap") {
                     match &inner_ty {
                         Type::Result(t) => (**t).clone(),
                         _ => Type::Basic("unknown".to_string()),
                     }
                 } else if type_name == "option" && (field == "is_some" || field == "is_none") {
                     Type::Basic("bool".to_string())
-                } else if type_name == "option" && field == "value" {
+                } else if type_name == "option" && (field == "value" || field == "unwrap") {
                     match &inner_ty {
                         Type::Option(t) => (**t).clone(),
                         _ => Type::Basic("unknown".to_string()),
@@ -762,6 +831,22 @@ impl LLVMGenerator {
                         r, ptr_reg, offset
                     ));
                 }
+
+                // For is_ok, negate the is_err value (is_ok = !is_err)
+                if type_name == "result" && field == "is_ok" {
+                    let neg_reg = self.next_reg();
+                    self.body.push_str(&format!(
+                        "    {} = icmp eq i64 {}, 0\n",
+                        neg_reg, r
+                    ));
+                    let ext_reg = self.next_reg();
+                    self.body.push_str(&format!(
+                        "    {} = zext i1 {} to i64\n",
+                        ext_reg, neg_reg
+                    ));
+                    return ext_reg;
+                }
+
                 r
             }
             Expr::FStringExpr(parts) => {
@@ -863,7 +948,66 @@ impl LLVMGenerator {
                 res_reg
             }
             Expr::TryExpr(inner) => {
-                self.gen_expr(inner)
+                let res_ptr = self.gen_expr(inner);
+                let is_err_reg = self.next_reg();
+                self.body.push_str(&format!(
+                    "    {} = call i64 @n0_c_load_int(ptr {}, i64 8)\n",
+                    is_err_reg, res_ptr
+                ));
+                let cmp_reg = self.next_reg();
+                self.body.push_str(&format!(
+                    "    {} = icmp ne i64 {}, 0\n",
+                    cmp_reg, is_err_reg
+                ));
+                let ok_lbl = self.next_label("try_ok");
+                let err_lbl = self.next_label("try_err");
+                self.body.push_str(&format!(
+                    "    br i1 {}, label %{}, label %{}\n\n{}:\n",
+                    cmp_reg, err_lbl, ok_lbl, err_lbl
+                ));
+                if self.current_ret_type == "i32" {
+                    self.body.push_str("    ret i32 1\n");
+                } else if self.current_ret_type == "void" {
+                    self.body.push_str("    ret void\n");
+                } else {
+                    self.body.push_str(&format!(
+                        "    ret ptr {}\n",
+                        res_ptr
+                    ));
+                }
+                self.body.push_str(&format!(
+                    "\n{}:\n",
+                    ok_lbl
+                ));
+                let val_reg = self.next_reg();
+                let inner_ty = self.infer_expr_type(inner);
+                let unwrap_ty = match inner_ty {
+                    Type::Result(t) => *t,
+                    _ => Type::Basic("unknown".to_string()),
+                };
+                let llvm_ty = self.llvm_type(&unwrap_ty);
+                if llvm_ty == "double" {
+                    let temp_reg = self.next_reg();
+                    self.body.push_str(&format!(
+                        "    {} = call i64 @n0_c_load_int(ptr {}, i64 16)\n",
+                        temp_reg, res_ptr
+                    ));
+                    self.body.push_str(&format!(
+                        "    {} = bitcast i64 {} to double\n",
+                        val_reg, temp_reg
+                    ));
+                } else if llvm_ty == "ptr" {
+                    self.body.push_str(&format!(
+                        "    {} = call ptr @n0_c_load_string(ptr {}, i64 16)\n",
+                        val_reg, res_ptr
+                    ));
+                } else {
+                    self.body.push_str(&format!(
+                        "    {} = call i64 @n0_c_load_int(ptr {}, i64 16)\n",
+                        val_reg, res_ptr
+                    ));
+                }
+                val_reg
             }
         }
     }

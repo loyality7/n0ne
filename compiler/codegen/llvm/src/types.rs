@@ -49,20 +49,33 @@ impl LLVMGenerator {
                     if name == "ok" || name == "err" || name == "risky" {
                         return Type::Result(Box::new(Type::Basic("unknown".to_string())));
                     }
+                    if let Some(ret_ty) = self.functions.get(name) {
+                        return ret_ty.clone();
+                    }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
+                    let receiver_ty = self.infer_expr_type(receiver);
+                    if let Type::Result(_) | Type::Option(_) = &receiver_ty {
+                        if method_name == "is_err" || method_name == "is_ok" || method_name == "error" || method_name == "value" || method_name == "unwrap" || method_name == "is_some" || method_name == "is_none" {
+                            let field_expr = Expr::FieldAccess {
+                                expr: receiver.clone(),
+                                field: method_name.clone(),
+                            };
+                            return self.infer_expr_type(&field_expr);
+                        }
+                    }
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() {
                             if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" {
                                 match (mod_name.as_str(), method_name.as_str()) {
                                     ("io", "read") => return Type::Basic("string".to_string()),
-                                    ("fs", "read") => return Type::Basic("string".to_string()),
-                                    ("fs", "write") => return Type::Basic("string".to_string()),
+                                    ("fs", "read") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
+                                    ("fs", "write") => return Type::Result(Box::new(Type::Basic("void".to_string()))),
                                     ("fs", "exists") => return Type::Basic("bool".to_string()),
-                                    ("fs", "delete") => return Type::Basic("string".to_string()),
-                                    ("fs", "mkdir") => return Type::Basic("string".to_string()),
-                                    ("fs", "list") => return Type::Basic("string".to_string()),
+                                    ("fs", "delete") => return Type::Result(Box::new(Type::Basic("void".to_string()))),
+                                    ("fs", "mkdir") => return Type::Result(Box::new(Type::Basic("void".to_string()))),
+                                    ("fs", "list") => return Type::Result(Box::new(Type::List(Box::new(Type::Basic("string".to_string()))))),
                                     ("json", "encode") => return Type::Basic("string".to_string()),
-                                    ("json", "decode") => return Type::Basic("unknown".to_string()),
+                                    ("json", "decode") => return Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))))),
                                     ("http", "get") => return Type::Basic("string".to_string()),
                                     ("http", "post") => return Type::Basic("string".to_string()),
                                     _ => {}
@@ -134,9 +147,11 @@ impl LLVMGenerator {
                 };
                 if type_name == "result" && field == "is_err" {
                     Type::Basic("int".to_string())
+                } else if type_name == "result" && field == "is_ok" {
+                    Type::Basic("int".to_string())
                 } else if type_name == "result" && field == "error" {
                     Type::Basic("string".to_string())
-                } else if type_name == "result" && field == "value" {
+                } else if type_name == "result" && (field == "value" || field == "unwrap") {
                     match &inner_ty {
                         Type::Result(t) => (**t).clone(),
                         _ => Type::Basic("unknown".to_string()),
@@ -145,7 +160,7 @@ impl LLVMGenerator {
                     Type::Basic("bool".to_string())
                 } else if type_name == "option" && field == "is_none" {
                     Type::Basic("bool".to_string())
-                } else if type_name == "option" && field == "value" {
+                } else if type_name == "option" && (field == "value" || field == "unwrap") {
                     match &inner_ty {
                         Type::Option(t) => (**t).clone(),
                         _ => Type::Basic("unknown".to_string()),

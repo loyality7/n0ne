@@ -291,10 +291,20 @@ impl LLVMGenerator {
                         val_llvm_ty, val_reg
                     ));
                 } else {
-                    self.body.push_str(&format!(
-                        "    ret {}\n",
-                        self.current_ret_type
-                    ));
+                    if self.current_ret_type == "void" {
+                        self.body.push_str("    ret void\n");
+                    } else if self.current_ret_type == "i32" {
+                        self.body.push_str("    ret i32 0\n");
+                    } else if self.current_ret_type == "double" {
+                        self.body.push_str("    ret double 0.0\n");
+                    } else if self.current_ret_type == "ptr" {
+                        self.body.push_str("    ret ptr null\n");
+                    } else {
+                        self.body.push_str(&format!(
+                            "    ret {} 0\n",
+                            self.current_ret_type
+                        ));
+                    }
                 }
             }
             Stmt::Expr(e) => {

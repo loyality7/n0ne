@@ -72,21 +72,27 @@ impl LLVMGenerator {
         self.globals.push_str("declare ptr @n0_int_to_string(i64)\n");
         self.globals.push_str("declare ptr @n0_float_to_string(double)\n");
         self.globals.push_str("declare ptr @n0_bool_to_string(i32)\n");
+        self.globals.push_str("declare void @n0_show_bool(i64)\n");
         self.globals.push_str("declare ptr @n0_string_concat(ptr, i32)\n");
         self.globals.push_str("declare i64 @n0_c_argc()\n");
         self.globals.push_str("declare ptr @n0_c_argv(i64)\n");
         self.globals.push_str("declare double @pow(double, double)\n");
         
         // stdlib C runtime declarations
-        self.globals.push_str("declare void @n0_io_show_err(ptr)\n");
-        self.globals.push_str("declare ptr @n0_io_read()\n");
+        self.globals.push_str("declare void @n0_show_err(ptr)\n");
+        self.globals.push_str("declare ptr @n0_io_read_line()\n");
         self.globals.push_str("declare ptr @n0_fs_read(ptr)\n");
         self.globals.push_str("declare ptr @n0_fs_write(ptr, ptr)\n");
-        self.globals.push_str("declare i64 @n0_fs_exists(ptr)\n");
+        self.globals.push_str("declare i1 @n0_fs_exists(ptr)\n");
         self.globals.push_str("declare ptr @n0_fs_delete(ptr)\n");
         self.globals.push_str("declare ptr @n0_fs_mkdir(ptr)\n");
         self.globals.push_str("declare ptr @n0_fs_list(ptr)\n");
-        self.globals.push_str("declare ptr @n0_json_encode(ptr)\n");
+        self.globals.push_str("declare ptr @n0_json_encode_string(ptr)\n");
+        self.globals.push_str("declare ptr @n0_json_encode_int(i64)\n");
+        self.globals.push_str("declare ptr @n0_json_encode_float(double)\n");
+        self.globals.push_str("declare ptr @n0_json_encode_bool(i64)\n");
+        self.globals.push_str("declare ptr @n0_json_encode_list(ptr)\n");
+        self.globals.push_str("declare ptr @n0_json_encode_map(ptr)\n");
         self.globals.push_str("declare ptr @n0_json_decode(ptr)\n");
         self.globals.push_str("declare ptr @n0_http_get(ptr)\n");
         self.globals.push_str("declare ptr @n0_http_post(ptr, ptr)\n");

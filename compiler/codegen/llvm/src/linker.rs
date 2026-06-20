@@ -15,9 +15,14 @@ pub(crate) fn exe_dir() -> PathBuf {
 }
 
 pub(crate) fn get_clang_path() -> PathBuf {
-    let bundled = exe_dir().join("clang").join(if cfg!(target_os = "windows") { "clang.exe" } else { "clang" });
-    if bundled.exists() {
-        return bundled;
+    let filename = if cfg!(target_os = "windows") { "clang.exe" } else { "clang" };
+    let bundled_bin = exe_dir().join("clang").join("bin").join(filename);
+    if bundled_bin.exists() {
+        return bundled_bin;
+    }
+    let bundled_root = exe_dir().join("clang").join(filename);
+    if bundled_root.exists() {
+        return bundled_root;
     }
 
     let mut prefixes = Vec::new();
@@ -26,8 +31,16 @@ pub(crate) fn get_clang_path() -> PathBuf {
             prefixes.push(prefix);
         }
     }
+
+    // Windows default paths
     prefixes.push("C:\\LLVM".to_string());
     prefixes.push("C:\\Program Files\\LLVM".to_string());
+
+    // Linux / macOS — /usr/bin/clang is a symlink to whatever version is installed
+    prefixes.push("/usr".to_string());
+    prefixes.push("/usr/local".to_string());
+    prefixes.push("/opt/homebrew".to_string());         // macOS Homebrew ARM
+    prefixes.push("/usr/local/opt/llvm".to_string());  // macOS Homebrew Intel
 
     for prefix in prefixes {
         let p = Path::new(&prefix).join("bin").join(if cfg!(target_os = "windows") { "clang.exe" } else { "clang" });
@@ -36,6 +49,7 @@ pub(crate) fn get_clang_path() -> PathBuf {
         }
     }
 
+    // Last resort: rely on PATH
     PathBuf::from("clang")
 }
 
@@ -82,8 +96,13 @@ pub fn compile_llvm(ast: &Program, out_path: &Path, debug: bool) -> std::io::Res
     };
 
     if !exists {
-        eprintln!("error: clang not found");
-        eprintln!("fix: reinstall n0ne from https://n0ne.dev");
+        eprintln!("error: clang not found.");
+        eprintln!();
+        eprintln!("  Linux / macOS:");
+        eprintln!("    curl -fsSL https://raw.githubusercontent.com/loyality7/n0ne/main/scripts/install.sh | sh");
+        eprintln!();
+        eprintln!("  Windows:");
+        eprintln!("    irm https://raw.githubusercontent.com/loyality7/n0ne/main/scripts/install.ps1 | iex");
         std::process::exit(1);
     }
 

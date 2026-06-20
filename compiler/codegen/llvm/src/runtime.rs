@@ -1,7 +1,7 @@
 pub(crate) const RUNTIME_C: &str = r#"
+#ifdef _WIN32
 typedef unsigned long long size_t;
 typedef long long int64_t;
-
 int printf(const char* format, ...);
 int sprintf(char* str, const char* format, ...);
 void* malloc(size_t size);
@@ -17,6 +17,12 @@ void* memcpy(void* dest, const void* src, size_t n);
 char* strtok(char* str, const char* delimiters);
 long long strtoll(const char* str, char** endptr, int base);
 double strtod(const char* str, char** endptr);
+#else
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#endif
 
 int global_argc = 0;
 char** global_argv = 0;
@@ -594,11 +600,55 @@ int64_t n0_float_to_int(double f) {
 }
 
 // Stdlib IO / FS / JSON / HTTP implementations
-void n0_io_show_err(const char* s) {
-    printf("error: %s\n", s ? s : "");
+typedef struct {
+    int64_t type_tag;
+    int64_t is_err;
+    void*   value;
+    char*   error;
+} N0Result;
+
+void* n0_make_ok(void* val) {
+    N0Result* res = malloc(sizeof(N0Result));
+    if (res) {
+        res->type_tag = 1;
+        res->is_err = 0;
+        res->value = val;
+        res->error = 0;
+    }
+    return res;
 }
 
-char* n0_io_read() {
+void* n0_make_err(const char* err_msg) {
+    N0Result* res = malloc(sizeof(N0Result));
+    if (res) {
+        res->type_tag = 1;
+        res->is_err = 1;
+        res->value = 0;
+        char* msg = malloc(strlen(err_msg) + 1);
+        if (msg) strcpy(msg, err_msg);
+        res->error = msg;
+    }
+    return res;
+}
+
+#ifdef _WIN32
+int _write(int fd, const void* buf, unsigned int count);
+#else
+long write(int fd, const void* buf, unsigned long count);
+#endif
+
+void n0_show_err(const char* s) {
+    if (!s) s = "";
+    #ifdef _WIN32
+    _write(2, s, (unsigned int)strlen(s));
+    _write(2, "\n", 1);
+    #else
+    write(2, s, strlen(s));
+    write(2, "\n", 1);
+    #endif
+}
+
+char* n0_io_read_line() {
     char buf[4096];
     int c;
     int idx = 0;
@@ -606,16 +656,22 @@ char* n0_io_read() {
     while (idx < 4095) {
         c = getchar();
         if (c == -1 || c == '\n') break;
+        if (c == '\r') continue;
         buf[idx++] = c;
     }
     buf[idx] = '\0';
     char* res = malloc(idx + 1);
     if (res) {
-        for (int i = 0; i <= idx; i++) res[i] = buf[i];
+        strcpy(res, buf);
     }
     return res ? res : "";
 }
 
+void n0_show_bool(int64_t b) {
+    printf("%s\n", b ? "true" : "false");
+}
+
+#ifdef _WIN32
 typedef struct FILE FILE;
 extern FILE* fopen(const char* filename, const char* mode);
 extern int fclose(FILE* stream);
@@ -624,11 +680,43 @@ extern size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream);
 extern int fseek(FILE* stream, long int offset, int whence);
 extern long int ftell(FILE* stream);
 extern int remove(const char* filename);
+#endif
 
-char* n0_fs_read(const char* path) {
-    if (!path) return "";
+#ifdef _WIN32
+int _mkdir(const char* path);
+#else
+#include <sys/stat.h>
+#include <dirent.h>
+#endif
+
+#ifdef _WIN32
+typedef struct {
+    unsigned long dwFileAttributes;
+    unsigned long ftCreationTime[2];
+    unsigned long ftLastAccessTime[2];
+    unsigned long ftLastWriteTime[2];
+    unsigned long nFileSizeHigh;
+    unsigned long nFileSizeLow;
+    unsigned long dwReserved0;
+    unsigned long dwReserved1;
+    char cFileName[260];
+    char cAlternateFileName[14];
+} WIN32_FIND_DATAA;
+void* FindFirstFileA(const char* lpFileName, WIN32_FIND_DATAA* lpFindFileData);
+int FindNextFileA(void* hFindFile, WIN32_FIND_DATAA* lpFindFileData);
+int FindClose(void* hFindFile);
+#endif
+
+void* n0_make_empty_list() {
+    void* list = malloc(24);
+    if (list) memset(list, 0, 24);
+    return list;
+}
+
+void* n0_fs_read(const char* path) {
+    if (!path) return n0_make_err("invalid path");
     FILE* f = fopen(path, "rb");
-    if (!f) return "";
+    if (!f) return n0_make_err("file not found");
     fseek(f, 0, 2);
     long len = ftell(f);
     fseek(f, 0, 0);
@@ -638,51 +726,357 @@ char* n0_fs_read(const char* path) {
         buf[len] = '\0';
     }
     fclose(f);
-    return buf ? buf : "";
+    return n0_make_ok(buf ? buf : "");
 }
 
-char* n0_fs_write(const char* path, const char* content) {
-    if (!path) return "";
+void* n0_fs_write(const char* path, const char* content) {
+    if (!path) return n0_make_err("invalid path");
     FILE* f = fopen(path, "wb");
-    if (!f) return "";
+    if (!f) return n0_make_err("could not write file");
     if (content) {
         fwrite(content, 1, strlen(content), f);
     }
     fclose(f);
-    return "";
+    return n0_make_ok(0);
 }
 
-int64_t n0_fs_exists(const char* path) {
+int n0_fs_exists(const char* path) {
     if (!path) return 0;
     FILE* f = fopen(path, "r");
     if (f) {
         fclose(f);
         return 1;
     }
-    return 0;
-}
-
-char* n0_fs_delete(const char* path) {
-    if (path) {
-        remove(path);
+    #ifdef _WIN32
+    WIN32_FIND_DATAA find_data;
+    void* handle = FindFirstFileA(path, &find_data);
+    if (handle != (void*)-1) {
+        FindClose(handle);
+        return 1;
     }
-    return "";
-}
-
-char* n0_fs_mkdir(const char* path) {
-    return "";
-}
-
-char* n0_fs_list(const char* path) {
-    return "";
-}
-
-char* n0_json_encode(void* val) {
-    return "{}";
-}
-
-void* n0_json_decode(const char* s) {
+    #else
+    void* dir = opendir(path);
+    if (dir) {
+        closedir(dir);
+        return 1;
+    }
+    #endif
     return 0;
+}
+
+void* n0_fs_delete(const char* path) {
+    if (!path) return n0_make_err("invalid path");
+    int res = remove(path);
+    if (res != 0) {
+        return n0_make_err("could not delete file");
+    }
+    return n0_make_ok(0);
+}
+
+void* n0_fs_mkdir(const char* path) {
+    if (!path) return n0_make_err("invalid path");
+    int res;
+    #ifdef _WIN32
+    res = _mkdir(path);
+    #else
+    res = mkdir(path, 0777);
+    #endif
+    if (res != 0) {
+        return n0_make_err("could not create directory");
+    }
+    return n0_make_ok(0);
+}
+
+void* n0_fs_list(const char* path) {
+    if (!path) return n0_make_err("invalid path");
+    void* list = n0_make_empty_list();
+    if (!list) return n0_make_err("out of memory");
+
+    #ifdef _WIN32
+    char search_path[512];
+    size_t len = strlen(path);
+    if (len > 500) return n0_make_err("path too long");
+    strcpy(search_path, path);
+    if (len > 0 && (search_path[len-1] == '/' || search_path[len-1] == '\\')) {
+        strcat(search_path, "*");
+    } else {
+        strcat(search_path, "/*");
+    }
+
+    WIN32_FIND_DATAA find_data;
+    void* handle = FindFirstFileA(search_path, &find_data);
+    if (handle == (void*)-1) {
+        return n0_make_ok(list);
+    }
+    do {
+        if (strcmp(find_data.cFileName, ".") != 0 && strcmp(find_data.cFileName, "..") != 0) {
+            char* name = malloc(strlen(find_data.cFileName) + 1);
+            if (name) {
+                strcpy(name, find_data.cFileName);
+                n0_list_push(list, (int64_t)name);
+            }
+        }
+    } while (FindNextFileA(handle, &find_data));
+    FindClose(handle);
+    #else
+    void* dir = opendir(path);
+    if (!dir) {
+        return n0_make_err("could not open directory");
+    }
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != 0) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            char* name = malloc(strlen(entry->d_name) + 1);
+            if (name) {
+                strcpy(name, entry->d_name);
+                n0_list_push(list, (int64_t)name);
+            }
+        }
+    }
+    closedir(dir);
+    #endif
+
+    return n0_make_ok(list);
+}
+
+char* n0_json_encode_string(const char* s) {
+    if (!s) return "\"\"";
+    size_t len = strlen(s);
+    // worst case: every char needs escaping (2x) + quotes + null
+    char* buf = malloc(len * 2 + 3);
+    if (!buf) return "\"\"";
+    int idx = 0;
+    buf[idx++] = '"';
+    for (size_t i = 0; i < len; i++) {
+        char c = s[i];
+        if (c == '"') { buf[idx++] = '\\'; buf[idx++] = '"'; }
+        else if (c == '\\') { buf[idx++] = '\\'; buf[idx++] = '\\'; }
+        else if (c == '\n') { buf[idx++] = '\\'; buf[idx++] = 'n'; }
+        else if (c == '\r') { buf[idx++] = '\\'; buf[idx++] = 'r'; }
+        else if (c == '\t') { buf[idx++] = '\\'; buf[idx++] = 't'; }
+        else { buf[idx++] = c; }
+    }
+    buf[idx++] = '"';
+    buf[idx] = '\0';
+    return buf;
+}
+
+char* n0_json_encode_int(int64_t n) {
+    char buf[64];
+    int idx = 0;
+    int is_neg = 0;
+    unsigned long long val;
+    if (n < 0) { is_neg = 1; val = -n; } else { val = n; }
+    do { buf[idx++] = (val % 10) + '0'; val /= 10; } while (val > 0);
+    if (is_neg) buf[idx++] = '-';
+    char* res = malloc(idx + 1);
+    if (res) {
+        for (int j = 0; j < idx; j++) res[j] = buf[idx - 1 - j];
+        res[idx] = '\0';
+    }
+    return res ? res : "0";
+}
+
+char* n0_json_encode_float(double f) {
+    char buf[128];
+    int idx = 0;
+    if (f < 0) { buf[idx++] = '-'; f = -f; }
+    f += 0.0000005;
+    unsigned long long ipart = (unsigned long long)f;
+    double fpart = f - (double)ipart;
+    char temp[64]; int temp_idx = 0;
+    do { temp[temp_idx++] = (ipart % 10) + '0'; ipart /= 10; } while (ipart > 0);
+    for (int j = 0; j < temp_idx; j++) buf[idx++] = temp[temp_idx - 1 - j];
+    buf[idx++] = '.';
+    for (int j = 0; j < 6; j++) { fpart *= 10; int digit = (int)fpart; buf[idx++] = digit + '0'; fpart -= digit; }
+    buf[idx] = '\0';
+    char* res = malloc(idx + 1);
+    if (res) strcpy(res, buf);
+    return res ? res : "0.0";
+}
+
+char* n0_json_encode_bool(int64_t b) {
+    const char* s = b ? "true" : "false";
+    char* res = malloc(strlen(s) + 1);
+    if (res) strcpy(res, s);
+    return res ? res : "false";
+}
+
+char* n0_json_encode_list(void* list) {
+    if (!list) return "[]";
+    int64_t len = *(int64_t*)((char*)list + 16);
+    char** data = *(char***)((char*)list + 8);
+    if (len <= 0 || !data) return "[]";
+
+    // estimate size: each element gets quoted + comma + spaces
+    size_t total = 2; // [ ]
+    for (int64_t i = 0; i < len; i++) {
+        char* elem = data[i];
+        total += (elem ? strlen(elem) * 2 : 4) + 4; // quotes + escaping + comma
+    }
+    char* buf = malloc(total + 1);
+    if (!buf) return "[]";
+    int idx = 0;
+    buf[idx++] = '[';
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) { buf[idx++] = ','; buf[idx++] = ' '; }
+        char* elem = data[i];
+        if (elem) {
+            buf[idx++] = '"';
+            size_t elen = strlen(elem);
+            for (size_t j = 0; j < elen; j++) {
+                char c = elem[j];
+                if (c == '"') { buf[idx++] = '\\'; buf[idx++] = '"'; }
+                else if (c == '\\') { buf[idx++] = '\\'; buf[idx++] = '\\'; }
+                else { buf[idx++] = c; }
+            }
+            buf[idx++] = '"';
+        } else {
+            buf[idx++] = 'n'; buf[idx++] = 'u'; buf[idx++] = 'l'; buf[idx++] = 'l';
+        }
+    }
+    buf[idx++] = ']';
+    buf[idx] = '\0';
+    return buf;
+}
+
+char* n0_json_encode_map(void* map) {
+    if (!map) return "{}";
+    int64_t n = *(int64_t*)((char*)map + 24);
+    char** keys = *(char***)((char*)map + 8);
+    int64_t* vals = *(int64_t**)((char*)map + 16);
+    if (n <= 0 || !keys || !vals) return "{}";
+
+    // estimate buffer size
+    size_t total = 2; // { }
+    for (int64_t i = 0; i < n; i++) {
+        total += (keys[i] ? strlen(keys[i]) * 2 : 4) + 4; // key + quotes
+        char* v = (char*)vals[i];
+        total += (v ? strlen(v) * 2 : 4) + 6; // value + quotes + colon + comma
+    }
+    char* buf = malloc(total + 1);
+    if (!buf) return "{}";
+    int idx = 0;
+    buf[idx++] = '{';
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0) { buf[idx++] = ','; buf[idx++] = ' '; }
+        // encode key
+        buf[idx++] = '"';
+        if (keys[i]) {
+            size_t klen = strlen(keys[i]);
+            for (size_t j = 0; j < klen; j++) {
+                char c = keys[i][j];
+                if (c == '"') { buf[idx++] = '\\'; buf[idx++] = '"'; }
+                else if (c == '\\') { buf[idx++] = '\\'; buf[idx++] = '\\'; }
+                else { buf[idx++] = c; }
+            }
+        }
+        buf[idx++] = '"';
+        buf[idx++] = ':';
+        buf[idx++] = ' ';
+        // encode value as string
+        char* v = (char*)vals[i];
+        buf[idx++] = '"';
+        if (v) {
+            size_t vlen = strlen(v);
+            for (size_t j = 0; j < vlen; j++) {
+                char c = v[j];
+                if (c == '"') { buf[idx++] = '\\'; buf[idx++] = '"'; }
+                else if (c == '\\') { buf[idx++] = '\\'; buf[idx++] = '\\'; }
+                else { buf[idx++] = c; }
+            }
+        }
+        buf[idx++] = '"';
+    }
+    buf[idx++] = '}';
+    buf[idx] = '\0';
+    return buf;
+}
+
+// JSON decoder: parses flat JSON object into a map[string, string]
+// Nested objects/arrays are stored as their raw JSON text
+void* n0_json_decode(const char* s) {
+    if (!s) return n0_make_err("null input");
+    // skip whitespace
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    if (*s != '{') return n0_make_err("expected JSON object");
+    s++; // skip {
+
+    // create empty map (32 bytes: cap, keys, vals, count)
+    void* map = malloc(32);
+    if (!map) return n0_make_err("out of memory");
+    memset(map, 0, 32);
+
+    while (1) {
+        // skip whitespace
+        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+        if (*s == '}') break;
+        if (*s == '\0') { return n0_make_err("unexpected end of JSON"); }
+
+        // parse key (must be string)
+        if (*s != '"') { return n0_make_err("expected string key"); }
+        s++; // skip opening quote
+        char key_buf[1024]; int ki = 0;
+        while (*s && *s != '"' && ki < 1023) {
+            if (*s == '\\' && *(s+1)) { s++; key_buf[ki++] = *s; }
+            else { key_buf[ki++] = *s; }
+            s++;
+        }
+        key_buf[ki] = '\0';
+        if (*s == '"') s++; // skip closing quote
+
+        // skip whitespace + colon
+        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+        if (*s != ':') { return n0_make_err("expected colon"); }
+        s++;
+        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+
+        // parse value
+        char val_buf[4096]; int vi = 0;
+        if (*s == '"') {
+            // string value
+            s++; // skip opening quote
+            while (*s && *s != '"' && vi < 4095) {
+                if (*s == '\\' && *(s+1)) { s++; val_buf[vi++] = *s; }
+                else { val_buf[vi++] = *s; }
+                s++;
+            }
+            val_buf[vi] = '\0';
+            if (*s == '"') s++;
+        } else if (*s == '{' || *s == '[') {
+            // nested object/array: capture raw JSON text
+            char open = *s;
+            char close = (open == '{') ? '}' : ']';
+            int depth = 1;
+            val_buf[vi++] = *s; s++;
+            while (*s && depth > 0 && vi < 4095) {
+                if (*s == open) depth++;
+                else if (*s == close) depth--;
+                if (depth > 0 || *s == close) val_buf[vi++] = *s;
+                s++;
+            }
+            val_buf[vi] = '\0';
+        } else {
+            // number, bool, null
+            while (*s && *s != ',' && *s != '}' && *s != ' ' && *s != '\n' && *s != '\r' && *s != '\t' && vi < 4095) {
+                val_buf[vi++] = *s; s++;
+            }
+            val_buf[vi] = '\0';
+        }
+
+        // store key-value pair in map
+        char* key_copy = malloc(ki + 1);
+        if (key_copy) strcpy(key_copy, key_buf);
+        char* val_copy = malloc(vi + 1);
+        if (val_copy) strcpy(val_copy, val_buf);
+        n0_map_set(map, key_copy, (int64_t)val_copy);
+
+        // skip whitespace + comma
+        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+        if (*s == ',') s++;
+    }
+
+    return n0_make_ok(map);
 }
 
 char* n0_http_get(const char* url) {
