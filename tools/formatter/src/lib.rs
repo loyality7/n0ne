@@ -195,6 +195,65 @@ impl Formatter {
                 self.newline();
                 self.format_block(body);
             }
+            Stmt::While { cond, body } => {
+                self.push_indent();
+                self.out.push_str("while ");
+                self.format_expr(cond);
+                self.newline();
+                self.format_block(body);
+            }
+            Stmt::Match { expr, cases } => {
+                self.push_indent();
+                self.out.push_str("match ");
+                self.format_expr(expr);
+                self.newline();
+                self.indent_level += 1;
+                for (arm, body) in cases {
+                    self.push_indent();
+                    match arm {
+                        MatchArm::Literal(lit) => match lit {
+                            Literal::Int(i) => self.out.push_str(&i.to_string()),
+                            Literal::Float(f) => {
+                                let mut s = f.to_string();
+                                if !s.contains('.') {
+                                    s.push_str(".0");
+                                }
+                                self.out.push_str(&s);
+                            }
+                            Literal::String(s) => self.out.push_str(&format!("\"{}\"", s.replace('\"', "\\\"").replace('\n', "\\n"))),
+                            Literal::Bool(b) => self.out.push_str(if *b { "true" } else { "false" }),
+                        },
+                        MatchArm::Wildcard => self.out.push_str("_"),
+                    }
+                    self.out.push_str(" ->");
+
+                    if body.stmts.len() == 1 && !matches!(body.stmts[0], Stmt::If {..} | Stmt::For {..} | Stmt::While {..} | Stmt::Match {..}) {
+                        self.out.push(' ');
+                        let saved_indent = self.indent_level;
+                        self.indent_level = 0;
+                        self.format_stmt(&body.stmts[0]);
+                        self.indent_level = saved_indent;
+                        if self.out.ends_with('\n') {
+                            self.out.pop();
+                        }
+                        self.newline();
+                    } else {
+                        self.newline();
+                        self.format_block(body);
+                    }
+                }
+                self.indent_level -= 1;
+            }
+            Stmt::Break => {
+                self.push_indent();
+                self.out.push_str("break");
+                self.newline();
+            }
+            Stmt::Continue => {
+                self.push_indent();
+                self.out.push_str("continue");
+                self.newline();
+            }
             Stmt::Return(opt_val) => {
                 self.push_indent();
                 self.out.push_str("return");
