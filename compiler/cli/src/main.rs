@@ -45,7 +45,8 @@ fn main() {
 
     match &cli.command {
         Commands::Build { file, debug } => {
-            build(file, *debug);
+            let exe = build(file, *debug);
+            println!("built {}", exe.display().to_string().replace("\\", "/"));
         }
         Commands::Run { file, debug } => {
             let exe = build(file, *debug);
@@ -124,6 +125,5 @@ fn build(file_path: &Path, debug: bool) -> PathBuf {
         exit(1);
     }
 
-    println!("built {}", exe_path.display().to_string().replace("\\", "/"));
     exe_path
 }
