@@ -22,6 +22,18 @@ impl Parser {
             self.parse_if_stmt()
         } else if self.check(TokenKind::For) {
             self.parse_for_stmt()
+        } else if self.check(TokenKind::While) {
+            self.parse_while_stmt()
+        } else if self.check(TokenKind::Match) {
+            self.parse_match_stmt()
+        } else if self.check(TokenKind::Break) {
+            self.advance();
+            self.consume(TokenKind::Newline);
+            Stmt::Break
+        } else if self.check(TokenKind::Continue) {
+            self.advance();
+            self.consume(TokenKind::Newline);
+            Stmt::Continue
         } else if self.check(TokenKind::Return) {
             self.parse_return_stmt()
         } else if self.check(TokenKind::Const) {
@@ -131,5 +143,73 @@ impl Parser {
         };
         self.consume(TokenKind::Newline);
         Stmt::Return(val)
+    }
+
+    pub(crate) fn parse_while_stmt(&mut self) -> Stmt {
+        self.consume(TokenKind::While);
+        let cond = self.parse_expr();
+        self.consume(TokenKind::Newline);
+        let body = self.parse_block();
+        Stmt::While { cond, body }
+    }
+
+    pub(crate) fn parse_match_stmt(&mut self) -> Stmt {
+        self.consume(TokenKind::Match);
+        let expr = self.parse_expr();
+        self.consume(TokenKind::Newline);
+        self.consume(TokenKind::Indent);
+        let mut cases = Vec::new();
+        while !self.check(TokenKind::Dedent) && !self.is_at_end() {
+            if self.check(TokenKind::Newline) {
+                self.advance();
+                continue;
+            }
+            let arm = self.parse_match_arm();
+            self.consume(TokenKind::Arrow);
+            let body = if self.check(TokenKind::Newline) {
+                self.consume(TokenKind::Newline);
+                self.parse_block()
+            } else {
+                let stmt = self.parse_stmt();
+                Block { stmts: vec![stmt] }
+            };
+            cases.push((arm, body));
+        }
+        self.consume(TokenKind::Dedent);
+        Stmt::Match { expr, cases }
+    }
+
+    pub(crate) fn parse_match_arm(&mut self) -> MatchArm {
+        let tok = self.peek();
+        match &tok.kind {
+            TokenKind::Ident(name) if name == "_" => {
+                self.advance();
+                MatchArm::Wildcard
+            }
+            TokenKind::Number(n) => {
+                let val = *n;
+                self.advance();
+                MatchArm::Literal(Literal::Int(val))
+            }
+            TokenKind::Float(f) => {
+                let val = *f;
+                self.advance();
+                MatchArm::Literal(Literal::Float(val))
+            }
+            TokenKind::String(s) => {
+                let val = s.clone();
+                self.advance();
+                MatchArm::Literal(Literal::String(val))
+            }
+            TokenKind::Bool(b) => {
+                let val = *b;
+                self.advance();
+                MatchArm::Literal(Literal::Bool(val))
+            }
+            other => panic!(
+                "Parser error: Expected match arm (literal or wildcard '_'), found '{}' at {}:{}",
+                other, tok.line, tok.column
+            ),
+        }
     }
 }
