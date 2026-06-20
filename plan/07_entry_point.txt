@@ -1,0 +1,140 @@
+================================================================
+n0ne — ENTRY POINT + COMPILATION UNIT
+================================================================
+
+----------------------------------------------------------------
+ENTRY POINT DECISION
+----------------------------------------------------------------
+
+Every executable n0ne program must have exactly one:
+
+  fn main()
+      ...
+
+That is the entry point. No implicit top-level code execution.
+Top-level code outside fn = compile error for executables.
+Top-level constants and type declarations = allowed.
+
+----------------------------------------------------------------
+WHY NOT TOP-LEVEL CODE
+----------------------------------------------------------------
+
+Top-level code makes import order matter.
+Side effects on import = unpredictable.
+Harder to test.
+main() is explicit, debuggable, clear.
+
+----------------------------------------------------------------
+MAIN SIGNATURE
+----------------------------------------------------------------
+
+No args version (most common):
+  fn main()
+      show("hello")
+
+With CLI args:
+  fn main(args: list[string])
+      show(args[0])
+
+With exit code return:
+  fn main() -> int
+      return 0
+
+With both:
+  fn main(args: list[string]) -> int
+      if args.len() == 0
+          return 1
+      show(args[0])
+      return 0
+
+----------------------------------------------------------------
+LIBRARY vs EXECUTABLE
+----------------------------------------------------------------
+
+Executable (has main, produces binary):
+  n0ne.toml:
+    [package]
+    type = "bin"
+
+Library (no main, produces .n0lib for others to import):
+  n0ne.toml:
+    [package]
+    type = "lib"
+
+Library has no entry point.
+Library exposes public fns and types.
+
+Both can exist in one package:
+  [package]
+  type = "bin+lib"
+
+  bin entry = src/main.n0
+  lib entry = src/lib.n0 (or mod.n0)
+
+----------------------------------------------------------------
+COMPILATION UNIT
+----------------------------------------------------------------
+
+One file = one module.
+Module name = file name without .n0 extension.
+
+  utils.n0      -> module "utils"
+  db/queries.n0 -> module "db.queries"
+
+One package = one folder with n0ne.toml.
+Package is the unit of versioning and distribution.
+
+----------------------------------------------------------------
+BUILD TARGETS
+----------------------------------------------------------------
+
+Single binary (default):
+  n0ne build
+  -> produces ./build/myapp.exe (Windows) or ./build/myapp (Linux/macOS)
+
+Specify output:
+  n0ne build -o ./dist/myapp
+
+Run without saving binary:
+  n0ne run
+
+Run with args:
+  n0ne run -- arg1 arg2
+
+Cross compile (Phase 2):
+  n0ne build --target linux-x64
+  n0ne build --target windows-x64
+  n0ne build --target macos-arm64
+
+----------------------------------------------------------------
+BUILD FOLDER
+----------------------------------------------------------------
+
+  build/
+      myapp          <- output binary
+      (intermediate .ll and .c files are in temp dir, auto-cleaned)
+
+Pass --debug to disable optimizations:
+  n0ne build --debug
+
+Default build uses -O2 optimization.
+
+----------------------------------------------------------------
+MULTI-BINARY PACKAGES
+----------------------------------------------------------------
+
+Package can have multiple binaries:
+  n0ne.toml:
+    [[bin]]
+    name = "server"
+    main = "src/server.n0"
+
+    [[bin]]
+    name = "cli"
+    main = "src/cli.n0"
+
+Build specific:
+  n0ne build --bin server
+  n0ne build --bin cli
+
+================================================================

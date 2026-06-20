@@ -1,0 +1,834 @@
+================================================================
+n0ne — COMPLETE TESTING GUIDE
+================================================================
+What to test. How to test. In what order.
+================================================================
+
+
+----------------------------------------------------------------
+SECTION 1 — TESTING PHILOSOPHY
+----------------------------------------------------------------
+
+Test each compiler stage independently.
+Test stage N before building stage N+1.
+Every bug found = write test for it. Never fix without test.
+Green tests = confidence to refactor.
+No tests = fear to change anything.
+
+Stages to test in order:
+  1. Lexer
+  2. Parser
+  3. Semantic Analysis
+  4. Code Generation
+  5. End-to-End (compile + run)
+  6. Standard Library
+  7. Error Messages
+  8. Edge Cases
+
+
+----------------------------------------------------------------
+SECTION 2 — LEXER TESTS
+----------------------------------------------------------------
+
+Location: tests/lexer/
+
+What to test: input source string → output token list.
+
+HOW TO RUN IN RUST:
+  #[test]
+  fn test_ident() {
+      let tokens = lex("name = 42");
+      assert_eq!(tokens, vec![
+          Token::Ident("name"),
+          Token::Eq,
+          Token::Number(42),
+          Token::Newline,
+      ]);
+  }
+
+WHAT TO TEST:
+
+--- IDENTIFIERS ---
+  input:  name
+  expect: [IDENT("name"), NEWLINE]
+
+  input:  snake_case
+  expect: [IDENT("snake_case"), NEWLINE]
+
+  input:  _private
+  expect: [IDENT("_private"), NEWLINE]
+
+--- KEYWORDS ---
+  input:  fn
+  expect: [FN, NEWLINE]
+
+  input:  if for type task return use const
+  expect: one keyword token each
+
+--- NUMBERS ---
+  input:  42
+  expect: [NUMBER(42), NEWLINE]
+
+  input:  3.14
+  expect: [FLOAT(3.14), NEWLINE]
+
+  input:  1_000_000
+  expect: [NUMBER(1000000), NEWLINE]
+
+  input:  0xFF
+  expect: [NUMBER(255), NEWLINE]
+
+  input:  0b1010
+  expect: [NUMBER(10), NEWLINE]
+
+--- STRINGS ---
+  input:  "hello"
+  expect: [STRING("hello"), NEWLINE]
+
+  input:  "hello\nworld"
+  expect: [STRING("hello\nworld"), NEWLINE]
+
+  input:  f"hello {name}"
+  expect: [FSTRING_START, STRING("hello "), FSTRING_EXPR_START,
+           IDENT("name"), FSTRING_EXPR_END, FSTRING_END, NEWLINE]
+
+--- BOOLEANS ---
+  input:  true
+  expect: [BOOL(true), NEWLINE]
+
+  input:  false
+  expect: [BOOL(false), NEWLINE]
+
+--- OPERATORS ---
+  input:  + - * / % **
+  expect: [PLUS, MINUS, STAR, SLASH, PERCENT, STARSTAR, NEWLINE]
+
+  input:  == != < > <= >=
+  expect: [EQEQ, NEQ, LT, GT, LTE, GTE, NEWLINE]
+
+  input:  = += -= *= /=
+  expect: [EQ, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ, NEWLINE]
+
+--- DELIMITERS ---
+  input:  ( ) [ ] . , : ->
+  expect: [LPAREN, RPAREN, LBRACKET, RBRACKET,
+           DOT, COMMA, COLON, ARROW, NEWLINE]
+
+--- INDENT / DEDENT ---
+  input:
+    fn main()
+        show("hi")
+
+  expect:
+    [FN, IDENT("main"), LPAREN, RPAREN, NEWLINE,
+     INDENT,
+     IDENT("show"), LPAREN, STRING("hi"), RPAREN, NEWLINE,
+     DEDENT,
+     EOF]
+
+  input (two levels):
+    fn main()
+        if true
+            show("hi")
+
+  expect:
+    [FN, IDENT("main"), LPAREN, RPAREN, NEWLINE,
+     INDENT,
+     IF, BOOL(true), NEWLINE,
+     INDENT,
+     IDENT("show"), LPAREN, STRING("hi"), RPAREN, NEWLINE,
+     DEDENT,
+     DEDENT,
+     EOF]
+
+--- COMMENTS ---
+  input:  # this is a comment
+  expect: [NEWLINE]   (comment discarded)
+
+  input:  x = 5  # inline
+  expect: [IDENT("x"), EQ, NUMBER(5), NEWLINE]
+
+--- BLANK LINES ---
+  input:  (empty line between code)
+  expect: blank lines ignored, no token emitted
+
+--- ERROR CASES ---
+  input:  @invalid
+  expect: LexError { line: 1, col: 1, msg: "unexpected character '@'" }
+
+  input:  "unterminated string
+  expect: LexError { msg: "unterminated string literal" }
+
+  input:  (tab indent)
+  expect: LexError { msg: "tabs not allowed, use 4 spaces" }
+
+  input:  (3 space indent)
+  expect: LexError { msg: "indent must be multiple of 4 spaces" }
+
+
+----------------------------------------------------------------
+SECTION 3 — PARSER TESTS
+----------------------------------------------------------------
+
+Location: tests/parser/
+
+What to test: token stream → AST nodes.
+
+HOW TO RUN:
+  #[test]
+  fn test_fn_decl() {
+      let ast = parse("fn greet(name: string)\n    show(name)\n");
+      assert_eq!(ast[0], FnDecl {
+          name: "greet",
+          params: vec![Param { name: "name", ty: Type::String }],
+          return_type: None,
+          body: vec![
+              ExprStmt(Call { name: "show", args: vec![Ident("name")] })
+          ]
+      });
+  }
+
+WHAT TO TEST:
+
+--- VARIABLE ASSIGNMENT ---
+  input:  name = "sarath"
+  expect: Assign { name: "name", value: Literal(String("sarath")) }
+
+  input:  age = 21
+  expect: Assign { name: "age", value: Literal(Int(21)) }
+
+  input:  x = y
+  expect: Assign { name: "x", value: Ident("y") }
+
+--- FUNCTION DECLARATION ---
+  input:
+    fn greet(name: string)
+        show(name)
+
+  expect:
+    FnDecl {
+        name: "greet",
+        params: [Param("name", string)],
+        return_type: None,
+        body: [Call("show", [Ident("name")])]
+    }
+
+  input (with return type):
+    fn add(a: int, b: int) -> int
+        return a + b
+
+  expect:
+    FnDecl {
+        name: "add",
+        params: [Param("a", int), Param("b", int)],
+        return_type: Some(int),
+        body: [Return(BinExpr(Add, Ident("a"), Ident("b")))]
+    }
+
+--- TYPE DECLARATION ---
+  input:
+    type User
+        name : string
+        age  : int
+
+  expect:
+    TypeDecl {
+        name: "User",
+        fields: [
+            Field("name", string),
+            Field("age", int),
+        ]
+    }
+
+--- IF STATEMENT ---
+  input:
+    if ready
+        deploy()
+
+  expect:
+    IfStmt {
+        cond: Ident("ready"),
+        then: [Call("deploy", [])],
+        elif: [],
+        else: None
+    }
+
+  input (with else):
+    if x > 0
+        show("positive")
+    else
+        show("negative")
+
+  expect:
+    IfStmt {
+        cond: BinExpr(GT, Ident("x"), Literal(0)),
+        then: [Call("show", [Literal("positive")])],
+        elif: [],
+        else: Some([Call("show", [Literal("negative")])])
+    }
+
+  input (with elif):
+    if x > 0
+        show("pos")
+    elif x < 0
+        show("neg")
+    else
+        show("zero")
+
+  expect: IfStmt with one elif clause
+
+--- FOR LOOP ---
+  input:
+    for user in users
+        send(user)
+
+  expect:
+    ForStmt {
+        var: "user",
+        iter: Ident("users"),
+        body: [Call("send", [Ident("user")])]
+    }
+
+--- EXPRESSIONS ---
+  input:  1 + 2
+  expect: BinExpr(Add, Literal(1), Literal(2))
+
+  input:  1 + 2 * 3
+  expect: BinExpr(Add, Literal(1), BinExpr(Mul, Literal(2), Literal(3)))
+  (multiplication binds tighter than addition)
+
+  input:  (1 + 2) * 3
+  expect: BinExpr(Mul, BinExpr(Add, Literal(1), Literal(2)), Literal(3))
+
+  input:  x == y and a != b
+  expect: BinExpr(And, BinExpr(Eq, x, y), BinExpr(Neq, a, b))
+
+  input:  not x
+  expect: UnaryExpr(Not, Ident("x"))
+
+--- FIELD ACCESS ---
+  input:  user.name
+  expect: FieldAccess { obj: Ident("user"), field: "name" }
+
+  input:  user.address.city
+  expect: FieldAccess {
+      obj: FieldAccess { obj: Ident("user"), field: "address" },
+      field: "city"
+  }
+
+--- METHOD CALL ---
+  input:  user.greet()
+  expect: MethodCall { obj: Ident("user"), method: "greet", args: [] }
+
+  input:  list.filter(fn)
+  expect: MethodCall { obj: Ident("list"), method: "filter", args: [Ident("fn")] }
+
+--- ERROR CASES ---
+  input:  fn ()       <- missing name
+  expect: ParseError { msg: "expected function name" }
+
+  input:  if          <- missing condition
+  expect: ParseError { msg: "expected expression after 'if'" }
+
+  input:  for x       <- missing 'in'
+  expect: ParseError { msg: "expected 'in' in for loop" }
+
+
+----------------------------------------------------------------
+SECTION 4 — SEMANTIC ANALYSIS TESTS
+----------------------------------------------------------------
+
+Location: tests/compiler/ (sema stage)
+
+What to test: typed AST correctness, error detection.
+
+WHAT TO TEST:
+
+--- UNDEFINED VARIABLE ---
+  input:
+    fn main()
+        show(x)
+
+  expect: Error E002: undefined variable 'x' at line 2
+
+--- UNDEFINED FUNCTION ---
+  input:
+    fn main()
+        nonexistent()
+
+  expect: Error E003: undefined function 'nonexistent' at line 2
+
+--- TYPE MISMATCH ---
+  input:
+    fn main()
+        age : int = "twenty"
+
+  expect: Error E001: type mismatch, expected int got string at line 2
+
+--- WRONG ARGUMENT COUNT ---
+  input:
+    fn greet(name: string)
+        show(name)
+
+    fn main()
+        greet("a", "b")
+
+  expect: Error E004: greet expects 1 argument, got 2
+
+--- WRONG ARGUMENT TYPE ---
+  input:
+    fn double(n: int) -> int
+        return n * 2
+
+    fn main()
+        double("hello")
+
+  expect: Error E005: argument 1 expects int, got string
+
+--- MISSING RETURN ---
+  input:
+    fn add(a: int, b: int) -> int
+        show("oops")
+
+  expect: Error E006: function 'add' missing return value
+
+--- VARIABLE SCOPE ---
+  input:
+    fn main()
+        if true
+            x = 5
+        show(x)
+
+  expect: Error E002: 'x' not accessible outside its block
+
+--- DUPLICATE NAME ---
+  input:
+    fn main()
+        x = 1
+        x = 2    <- reassign ok
+
+    fn main()    <- duplicate fn
+        show("")
+
+  expect: Error E012: duplicate function name 'main'
+
+--- TYPE FIELD ACCESS ---
+  input:
+    type User
+        name : string
+
+    fn main()
+        u = User()
+        show(u.age)   <- field does not exist
+
+  expect: Error: 'User' has no field 'age'
+
+--- VALID PROGRAMS (must NOT error) ---
+  - hello world
+  - fn with correct return type
+  - if/else with matching types
+  - for loop over list
+  - type instantiation and field access
+  - nested fn calls
+  - result type with try
+
+
+----------------------------------------------------------------
+SECTION 5 — CODE GENERATION TESTS
+----------------------------------------------------------------
+
+Location: tests/compiler/ (codegen stage)
+
+What to test: AST → emitted LLVM IR correctness.
+
+WHAT TO TEST:
+
+--- HELLO WORLD ---
+  n0ne:
+    fn main()
+        show("hello world")
+
+  expected LLVM IR (key parts):
+    @.str.0 = private unnamed_addr constant [12 x i8] c"hello world\00"
+    declare void @n0_show_string(ptr)
+    define i32 @main(i32 %argc, ptr %argv) {
+    entry:
+        ...
+        call void @n0_show_string(ptr %t1)
+        ret i32 0
+    }
+
+--- FUNCTION WITH ARGS ---
+  n0ne:
+    fn add(a: int, b: int) -> int
+        return a + b
+
+  expected LLVM IR:
+    define i64 @n0_add(i64 %a, i64 %b) {
+    entry:
+        %_a = alloca i64, align 8
+        store i64 %a, ptr %_a, align 8
+        %_b = alloca i64, align 8
+        store i64 %b, ptr %_b, align 8
+        %t1 = load i64, ptr %_a, align 8
+        %t2 = load i64, ptr %_b, align 8
+        %t3 = add i64 %t1, %t2
+        ret i64 %t3
+    }
+
+
+----------------------------------------------------------------
+SECTION 6 — END TO END TESTS
+----------------------------------------------------------------
+
+Location: tests/integration/
+
+What to test: write .n0 file, compile, run binary, check output.
+
+HOW TO RUN:
+  #[test]
+  fn test_hello() {
+      let output = compile_and_run("tests/integration/hello/main.n0");
+      assert_eq!(output.stdout, "hello world\n");
+      assert_eq!(output.exit_code, 0);
+  }
+
+TEST CASES:
+
+--- 01: HELLO WORLD ---
+  file: hello/main.n0
+    fn main()
+        show("hello world")
+  expect stdout: "hello world\n"
+  expect exit:   0
+
+--- 02: ARITHMETIC ---
+  file: arithmetic/main.n0
+    fn main()
+        x = 10 + 5
+        show(x.to_string())
+  expect stdout: "15\n"
+
+--- 03: FUNCTION CALL ---
+  file: fn_call/main.n0
+    fn double(n: int) -> int
+        return n * 2
+    fn main()
+        show(double(21).to_string())
+  expect stdout: "42\n"
+
+--- 04: IF TRUE BRANCH ---
+  file: if_true/main.n0
+    fn main()
+        if true
+            show("yes")
+  expect stdout: "yes\n"
+
+--- 05: IF FALSE BRANCH ---
+  file: if_false/main.n0
+    fn main()
+        if false
+            show("yes")
+        else
+            show("no")
+  expect stdout: "no\n"
+
+--- 06: FOR LOOP ---
+  file: for_loop/main.n0
+    fn main()
+        items = [1, 2, 3]
+        for item in items
+            show(item.to_string())
+  expect stdout: "1\n2\n3\n"
+
+--- 07: TYPE AND FIELDS ---
+  file: type_basic/main.n0
+    type User
+        name : string
+        age  : int
+    fn main()
+        u = User()
+        u.name = "sarath"
+        u.age = 21
+        show(u.name)
+        show(u.age.to_string())
+  expect stdout: "sarath\n21\n"
+
+--- 08: STRING INTERPOLATION ---
+  file: fstring/main.n0
+    fn main()
+        name = "sarath"
+        show(f"hello {name}")
+  expect stdout: "hello sarath\n"
+
+--- 09: RESULT TYPE ---
+  file: result/main.n0
+    fn divide(a: int, b: int) -> result[int]
+        if b == 0
+            return err("zero")
+        return ok(a / b)
+    fn main()
+        val = divide(10, 2)
+        if val.is_ok
+            show(val.unwrap().to_string())
+  expect stdout: "5\n"
+
+--- 10: ERROR PROPAGATION ---
+  file: try/main.n0
+    fn divide(a: int, b: int) -> result[int]
+        if b == 0
+            return err("zero")
+        return ok(a / b)
+    fn run() -> result[int]
+        val = try divide(10, 0)
+        return ok(val)
+    fn main()
+        r = run()
+        if r.is_err
+            show(r.error)
+  expect stdout: "zero\n"
+
+--- 11: EXIT CODE ---
+  file: exit_code/main.n0
+    fn main() -> int
+        return 42
+  expect exit: 42
+
+--- 12: CLI ARGS ---
+  file: args/main.n0
+    fn main(args: list[string])
+        show(args[0])
+  run with arg: "testarg"
+  expect stdout: "testarg\n"
+
+--- 13: NESTED FUNCTIONS ---
+  file: nested_fns/main.n0
+    fn add(a: int, b: int) -> int
+        return a + b
+    fn multiply(a: int, b: int) -> int
+        return a * b
+    fn main()
+        result = add(multiply(2, 3), 4)
+        show(result.to_string())
+  expect stdout: "10\n"
+
+--- 14: RECURSION ---
+  file: recursion/main.n0
+    fn factorial(n: int) -> int
+        if n <= 1
+            return 1
+        return n * factorial(n - 1)
+    fn main()
+        show(factorial(5).to_string())
+  expect stdout: "120\n"
+
+--- 15: MULTIPLE TYPES ---
+  file: multi_type/main.n0
+    type Point
+        x : int
+        y : int
+    fn distance(p: Point) -> float
+        return float(p.x * p.x + p.y * p.y)
+    fn main()
+        p = Point()
+        p.x = 3
+        p.y = 4
+        show(distance(p).to_string())
+  expect stdout: "25.0\n"
+
+
+----------------------------------------------------------------
+SECTION 7 — ERROR MESSAGE TESTS
+----------------------------------------------------------------
+
+Location: tests/compiler/errors/
+
+What to test: compiler produces correct, helpful error messages.
+
+HOW TO RUN:
+  #[test]
+  fn test_undefined_var_error() {
+      let result = compile("tests/errors/undef_var.n0");
+      assert!(result.is_err());
+      let err = result.unwrap_err();
+      assert!(err.contains("E002"));
+      assert!(err.contains("undefined variable"));
+      assert!(err.contains("line 2"));
+  }
+
+TEST CASES:
+
+  undef_var.n0        -> E002 with line number
+  type_mismatch.n0    -> E001 with expected/got types
+  wrong_arg_count.n0  -> E004 with expected/got counts
+  missing_return.n0   -> E006 with function name
+  bad_indent.n0       -> E008 with column number
+  circular_import.n0  -> E009 with cycle path shown
+  duplicate_fn.n0     -> E012 with name and both line numbers
+
+For each: verify error code, line number, helpful message, hint present.
+
+
+----------------------------------------------------------------
+SECTION 8 — STDLIB TESTS
+----------------------------------------------------------------
+
+Location: tests/runtime/ and std/*/tests/
+
+WHAT TO TEST:
+
+--- io ---
+  show("hello")              -> prints to stdout
+  read()                     -> reads line from stdin
+  show_err("oops")           -> prints to stderr
+
+--- fs ---
+  fs.write("f.txt", "hi")   -> file exists with content
+  fs.read("f.txt")           -> returns "hi"
+  fs.exists("f.txt")         -> true
+  fs.delete("f.txt")         -> file gone
+  fs.mkdir("dir")            -> directory created
+  fs.list("dir")             -> returns list of files
+
+--- json ---
+  json.encode({"a": 1})      -> '{"a":1}'
+  json.decode('{"a":1}')     -> map with key "a" = 1
+  invalid json               -> err result
+
+--- http (basic) ---
+  http.get("url")            -> result[string]
+  http.post("url", body)     -> result[string]
+
+
+----------------------------------------------------------------
+SECTION 9 — EDGE CASE TESTS
+----------------------------------------------------------------
+
+These break compilers. Test all.
+
+--- EMPTY FUNCTION ---
+  fn noop()
+      pass         <- need 'pass' keyword or empty body rule
+
+--- DEEPLY NESTED BLOCKS ---
+  if a
+      if b
+          if c
+              if d
+                  show("deep")
+
+--- LARGE NUMBER ---
+  n = 9223372036854775807   <- max int64
+
+--- EMPTY STRING ---
+  show("")
+
+--- EMPTY LIST ---
+  items = []
+  for item in items
+      show(item)
+  expect: no output, no crash
+
+--- SINGLE ITEM LIST ---
+  items = [42]
+  for item in items
+      show(item.to_string())
+  expect: "42\n"
+
+--- ZERO ---
+  show(0.to_string())
+  expect: "0\n"
+
+--- NEGATIVE NUMBERS ---
+  show((-5).to_string())
+  expect: "-5\n"
+
+--- BOOL TO STRING ---
+  show(true.to_string())
+  expect: "true\n"
+
+--- OPTION NONE ---
+  fn find() -> option[int]
+      return none
+  fn main()
+      r = find()
+      if r.is_none
+          show("nothing")
+  expect: "nothing\n"
+
+--- UNICODE STRING ---
+  show("नमस्ते")
+  expect: "नमस्ते\n"
+
+--- VERY LONG STRING ---
+  s = "a" * 100000
+  show(s.len().to_string())
+  expect: "100000\n"
+
+
+----------------------------------------------------------------
+SECTION 10 — RUNNING TESTS
+----------------------------------------------------------------
+
+Run all tests:
+  n0ne test
+
+Run specific stage:
+  cargo test --package n0ne-lexer
+  cargo test --package n0ne-parser
+  cargo test --package n0ne-sema
+  cargo test --package n0ne-codegen
+
+Run integration tests only:
+  cargo test integration
+
+Run with output (see println! in tests):
+  cargo test -- --nocapture
+
+Update snapshots (insta):
+  cargo insta review
+
+Run single test:
+  cargo test test_hello_world
+
+
+----------------------------------------------------------------
+SECTION 11 — TEST COVERAGE GOALS
+----------------------------------------------------------------
+
+v0.1 target:
+  Lexer:   100% of token types covered
+  Parser:  100% of grammar rules covered
+  Sema:    all 12 error codes have a test
+  E2E:     15 integration tests passing
+
+v0.2 target:
+  All codegen paths covered
+  All stdlib functions have tests
+  All edge cases from Section 9 passing
+
+v1.0 target:
+  Zero known failing tests
+  No regression in 6 months
+  Fuzz testing on lexer and parser
+
+
+----------------------------------------------------------------
+SECTION 12 — WHAT A PASSING TEST SUITE MEANS
+----------------------------------------------------------------
+
+If all tests pass:
+  Language tokenizes correctly.
+  Language parses correctly.
+  Types check correctly.
+  Errors report correctly.
+  Binaries produce correct output.
+  Edge cases do not crash.
+
+That = working language.
+Not complete. Not fast. Not full-featured.
+But WORKING. Ship that. Then add features.
+
+================================================================
+END OF TESTING GUIDE
+================================================================

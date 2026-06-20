@@ -1,0 +1,147 @@
+================================================================
+n0ne — ERROR HANDLING
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+No exceptions. No try/catch blocks.
+Use result[T] type. Explicit error propagation.
+Inspired by: Rust Result, Go multiple returns.
+But simpler syntax.
+
+----------------------------------------------------------------
+RESULT TYPE
+----------------------------------------------------------------
+
+  result[T] = ok(T) | err(string)
+
+Function that can fail returns result[T]:
+
+  fn divide(a: int, b: int) -> result[int]
+      if b == 0
+          return err("division by zero")
+      return ok(a / b)
+
+----------------------------------------------------------------
+HANDLING RESULT
+----------------------------------------------------------------
+
+Check manually:
+  val = divide(10, 2)
+  if val.is_ok
+      show(val.unwrap())
+  if val.is_err
+      show(val.error)
+
+Unwrap with default:
+  n = divide(10, 0).unwrap_or(0)
+
+----------------------------------------------------------------
+TRY — PROPAGATE ERRORS UP
+----------------------------------------------------------------
+
+  try expr
+
+If expr is err: current function immediately returns that err.
+If expr is ok:  unwraps and continues.
+
+  fn load_and_process() -> result[string]
+      data = try read_file("input.txt")   <- returns err if read fails
+      result = try process(data)          <- returns err if process fails
+      return ok(result)
+
+Calling function with try must itself return result[T].
+Using try in fn that returns non-result = compile error.
+
+----------------------------------------------------------------
+OPTION TYPE
+----------------------------------------------------------------
+
+  option[T] = some(T) | none
+
+For values that may not exist. Not for errors.
+
+  fn find_user(id: int) -> option[User]
+      if id == 0
+          return none
+      return some(users[id])
+
+Check:
+  user = find_user(42)
+  if user.is_some
+      show(user.unwrap().name)
+  if user.is_none
+      show("not found")
+
+Unwrap with default:
+  name = find_user(0).map(fn(u) u.name).unwrap_or("unknown")
+
+----------------------------------------------------------------
+DIFFERENCE: result vs option
+----------------------------------------------------------------
+
+option[T] = value may or may not exist. No reason needed.
+result[T] = operation may fail. Error message explains why.
+
+Use option for: lookups, searches, optional config.
+Use result for: IO, parsing, network, computation that can fail.
+
+----------------------------------------------------------------
+PANIC — UNRECOVERABLE ERRORS
+----------------------------------------------------------------
+
+For truly unrecoverable situations:
+  panic("memory allocation failed")
+
+Prints error + stack trace. Exits process.
+Do NOT use panic for expected failure cases. Use result.
+Use panic only for:
+  - programmer bugs (wrong index, nil deref)
+  - unrecoverable system failure
+
+----------------------------------------------------------------
+ASSERT
+----------------------------------------------------------------
+
+  assert(x > 0)
+  assert(x > 0, "x must be positive")
+
+Panics if condition false.
+In release build (n0ne build --release): asserts are removed.
+In test build (n0ne test): asserts kept, failure shows test name.
+
+----------------------------------------------------------------
+ERROR MESSAGES — COMPILER ERRORS
+----------------------------------------------------------------
+
+Format:
+  error[CODE]: SHORT DESCRIPTION
+    --> filename.n0:LINE:COL
+       |
+  LINE | source code here
+       |       ^^^^^ annotation
+       |
+  hint: suggestion
+
+Error codes:
+  E001  type mismatch
+  E002  undefined variable
+  E003  undefined function
+  E004  wrong argument count
+  E005  wrong argument type
+  E006  missing return
+  E007  unreachable code
+  E008  inconsistent indent
+  E009  circular import
+  E010  use of ptr outside unsafe
+  E011  try in non-result function
+  E012  duplicate name
+
+Warnings (do not stop compilation):
+  W001  unused variable
+  W002  unused import
+  W003  unreachable after return
+
+================================================================

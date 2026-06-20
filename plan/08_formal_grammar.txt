@@ -1,0 +1,244 @@
+================================================================
+n0ne — FORMAL GRAMMAR (EBNF)
+================================================================
+
+Write parser from this. Not from vibes.
+
+Notation:
+  A B       sequence
+  A | B     choice
+  A?        optional
+  A*        zero or more
+  A+        one or more
+  'x'       literal terminal
+  UPPER     lexer token
+
+----------------------------------------------------------------
+LEXER TOKENS
+----------------------------------------------------------------
+
+INDENT       = increase in indentation level
+DEDENT       = decrease in indentation level
+NEWLINE      = line ending (after non-blank line)
+IDENT        = [a-zA-Z_][a-zA-Z0-9_]*
+NUMBER       = [0-9][0-9_]* ('.' [0-9][0-9_]*)?
+STRING       = '"' (char | escape)* '"'
+FSTRING      = 'f"' (char | '{' expr '}')* '"'
+BOOL         = 'true' | 'false'
+COMMENT      = '#' .* NEWLINE  (discarded by lexer)
+
+KEYWORDS:
+  fn  type  task  if  else  elif  for  in  return
+  use  const  priv  extern  export  unsafe  weak
+  and  or  not  try  spawn  channel  option  result
+  ok  err  some  none  ptr
+
+OPERATORS:
+  +  -  *  /  %  **
+  ==  !=  <  >  <=  >=
+  =  +=  -=  *=  /=
+  (  )  [  ]  .  ,  :  ->
+
+----------------------------------------------------------------
+TOP LEVEL
+----------------------------------------------------------------
+
+program         = top_decl* EOF
+
+top_decl        = fn_decl
+                | type_decl
+                | task_decl
+                | const_decl
+                | use_decl
+                | extern_decl
+
+----------------------------------------------------------------
+DECLARATIONS
+----------------------------------------------------------------
+
+fn_decl         = 'fn' method_recv? IDENT '(' param_list? ')' return_type? NEWLINE block
+
+method_recv     = '(' 'self' IDENT ')'
+
+param_list      = param (',' param)*
+
+param           = IDENT ':' type_expr
+
+return_type     = '->' type_expr
+
+type_decl       = 'type' IDENT NEWLINE INDENT field_decl+ DEDENT
+
+field_decl      = IDENT ':' type_expr NEWLINE
+
+task_decl       = 'task' IDENT NEWLINE block
+
+const_decl      = 'const' IDENT '=' expr NEWLINE
+
+use_decl        = 'use' use_path ('{' IDENT (',' IDENT)* '}')? NEWLINE
+
+use_path        = IDENT ('/' IDENT)*
+                | './' IDENT ('/' IDENT)*
+
+extern_decl     = 'extern' STRING 'fn' IDENT '(' extern_params? ')' return_type? NEWLINE
+
+extern_params   = extern_param (',' extern_param)*
+
+extern_param    = IDENT ':' type_expr
+                | '...'
+
+----------------------------------------------------------------
+BLOCK
+----------------------------------------------------------------
+
+block           = NEWLINE INDENT stmt+ DEDENT
+
+----------------------------------------------------------------
+STATEMENTS
+----------------------------------------------------------------
+
+stmt            = assign_stmt
+                | return_stmt
+                | if_stmt
+                | for_stmt
+                | expr_stmt
+                | unsafe_stmt
+                | spawn_stmt
+
+assign_stmt     = IDENT '=' expr NEWLINE
+                | IDENT '+=' expr NEWLINE
+                | IDENT '-=' expr NEWLINE
+
+return_stmt     = 'return' expr? NEWLINE
+
+if_stmt         = 'if' expr NEWLINE block
+                  elif_clause*
+                  else_clause?
+
+elif_clause     = 'elif' expr NEWLINE block
+
+else_clause     = 'else' NEWLINE block
+
+for_stmt        = 'for' IDENT 'in' expr NEWLINE block
+
+unsafe_stmt     = 'unsafe' NEWLINE block
+
+spawn_stmt      = 'spawn' IDENT '(' arg_list? ')' NEWLINE
+
+expr_stmt       = expr NEWLINE
+
+----------------------------------------------------------------
+EXPRESSIONS
+----------------------------------------------------------------
+
+expr            = or_expr
+
+or_expr         = and_expr ('or' and_expr)*
+
+and_expr        = not_expr ('and' not_expr)*
+
+not_expr        = 'not' not_expr
+                | compare_expr
+
+compare_expr    = add_expr (compare_op add_expr)*
+
+compare_op      = '==' | '!=' | '<' | '>' | '<=' | '>='
+
+add_expr        = mul_expr (('+' | '-') mul_expr)*
+
+mul_expr        = pow_expr (('*' | '/' | '%') pow_expr)*
+
+pow_expr        = unary_expr ('**' unary_expr)*
+
+unary_expr      = '-' unary_expr
+                | postfix_expr
+
+postfix_expr    = primary_expr postfix*
+
+postfix         = '.' IDENT              field access
+                | '.' IDENT '(' arg_list? ')'   method call
+                | '[' expr ']'           index
+
+primary_expr    = IDENT
+                | NUMBER
+                | STRING
+                | FSTRING
+                | BOOL
+                | 'none'
+                | 'some' '(' expr ')'
+                | 'ok' '(' expr ')'
+                | 'err' '(' expr ')'
+                | IDENT '(' arg_list? ')'        function call
+                | IDENT '()'                     type constructor
+                | '[' (expr (',' expr)*)? ']'    list literal
+                | 'try' expr
+                | 'weak' '(' expr ')'
+                | '(' expr ')'
+
+arg_list        = expr (',' expr)*
+
+----------------------------------------------------------------
+TYPE EXPRESSIONS
+----------------------------------------------------------------
+
+type_expr       = 'int' | 'int8' | 'int16' | 'int32' | 'int64'
+                | 'uint8' | 'uint16' | 'uint32' | 'uint64'
+                | 'float' | 'float32' | 'float64'
+                | 'bool'
+                | 'string'
+                | 'ptr'
+                | IDENT                          named type
+                | 'list' '[' type_expr ']'
+                | 'map' '[' type_expr ',' type_expr ']'
+                | 'option' '[' type_expr ']'
+                | 'result' '[' type_expr ']'
+                | 'channel' '[' type_expr ']'
+                | 'weak' '[' type_expr ']'
+
+----------------------------------------------------------------
+INDENTATION RULES (for lexer)
+----------------------------------------------------------------
+
+Track indent level with stack. Start stack = [0].
+
+On each new non-blank non-comment line:
+  count leading spaces.
+  if count > stack.top():
+      emit INDENT
+      push count to stack
+  elif count < stack.top():
+      while stack.top() > count:
+          emit DEDENT
+          pop stack
+      if stack.top() != count:
+          error: inconsistent dedent
+  else:
+      no token (same level)
+
+At EOF: emit DEDENT for each remaining level on stack.
+
+Tab characters = compile error. Use spaces only.
+Indent unit = 4 spaces. Other amounts = compile error.
+
+----------------------------------------------------------------
+COMMENT SYNTAX
+----------------------------------------------------------------
+
+  # this is a comment
+  x = 5  # inline comment
+
+Comments discarded by lexer. Never reach parser.
+
+----------------------------------------------------------------
+AMBIGUITY NOTES
+----------------------------------------------------------------
+
+Call vs constructor:
+  User()      <- constructor (type name, capital first letter)
+  greet()     <- function call (lowercase first letter)
+  Enforce: type names MUST start uppercase. fn names MUST start lowercase.
+
+Field access vs method call:
+  x.name      <- field access (no parens)
+  x.greet()   <- method call (with parens)
+
+================================================================

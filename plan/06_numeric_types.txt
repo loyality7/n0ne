@@ -1,0 +1,128 @@
+================================================================
+n0ne — NUMERIC TYPES
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+Keep it simple. Few types. Explicit sizes available.
+Default int = 64-bit signed.
+Default float = 64-bit double.
+Most developers never need anything else.
+
+----------------------------------------------------------------
+INTEGER TYPES
+----------------------------------------------------------------
+
+Default:
+  int     64-bit signed integer   -9.2e18 to 9.2e18
+
+Explicit sizes (when needed for FFI or performance):
+  int8    8-bit signed    -128 to 127
+  int16   16-bit signed
+  int32   32-bit signed
+  int64   64-bit signed   (same as int)
+  uint8   8-bit unsigned  0 to 255
+  uint16  16-bit unsigned
+  uint32  16-bit unsigned
+  uint64  64-bit unsigned
+
+Default int in user code = int64.
+Use sized types only for FFI or binary protocols.
+
+----------------------------------------------------------------
+FLOAT TYPES
+----------------------------------------------------------------
+
+Default:
+  float   64-bit double precision (IEEE 754)
+
+Explicit:
+  float32   single precision (for FFI or GPU future)
+  float64   same as float
+
+Default float in user code = float64.
+
+----------------------------------------------------------------
+LITERALS
+----------------------------------------------------------------
+
+Integer:
+  n = 42
+  n = 1_000_000    <- underscores allowed for readability
+  n = 0xFF         <- hex
+  n = 0b1010       <- binary
+  n = 0o77         <- octal
+
+Float:
+  f = 3.14
+  f = 1.0e10
+  f = 1_234.567_89
+
+----------------------------------------------------------------
+ARITHMETIC OPERATORS
+----------------------------------------------------------------
+
+  +    add
+  -    subtract
+  *    multiply
+  /    divide
+  %    modulo
+  **   power (float result)
+
+Integer division truncates toward zero:
+  7 / 2 = 3
+
+Float division:
+  7.0 / 2.0 = 3.5
+
+Mixing int and float = compile error:
+  3 + 1.5   <- error: cannot mix int and float
+  Use explicit conversion:
+  float(3) + 1.5   <- ok
+
+----------------------------------------------------------------
+CONVERSION
+----------------------------------------------------------------
+
+  n = int(3.9)       <- truncates to 3 (not rounds)
+  f = float(42)      <- 42.0
+  n = int("42")      <- parse string, returns option[int]
+  s = 42.to_string() <- "42"
+
+----------------------------------------------------------------
+OVERFLOW
+----------------------------------------------------------------
+
+Phase 1: overflow wraps silently (like C).
+Phase 2: add checked arithmetic functions:
+  n = int.checked_add(a, b)   <- returns option[int]
+
+----------------------------------------------------------------
+MATH STDLIB
+----------------------------------------------------------------
+
+  use math
+
+  math.abs(-5)
+  math.sqrt(16.0)
+  math.floor(3.7)
+  math.ceil(3.2)
+  math.round(3.5)
+  math.min(a, b)
+  math.max(a, b)
+  math.clamp(val, low, high)
+  math.PI
+  math.E
+
+----------------------------------------------------------------
+COMPARISON
+----------------------------------------------------------------
+
+  ==  !=  <  >  <=  >=
+
+All work on int and float.
+Comparing int to float = compile error. Convert first.
+
+================================================================

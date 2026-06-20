@@ -1,0 +1,115 @@
+================================================================
+n0ne — FFI (FOREIGN FUNCTION INTERFACE)
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+n0ne can call C functions directly.
+C can call n0ne functions via exported symbols.
+No other FFI targets in Phase 1.
+
+This is how the runtime is built.
+This is how users call system libraries.
+
+----------------------------------------------------------------
+CURRENT IMPLEMENTATION
+----------------------------------------------------------------
+
+The n0ne compiler embeds a small C runtime (RUNTIME_C) that
+provides low-level primitives. These are declared as LLVM IR
+external functions and linked by clang at compile time.
+
+Built-in C functions available in n0ne code:
+  c_alloc(size)                 heap allocation (zeroed)
+  c_store_int(ptr, offset, val) store int at memory offset
+  c_store_string(ptr, off, str) store string at memory offset
+  c_load_int(ptr, offset)       load int from memory offset
+  c_load_string(ptr, offset)    load string from memory offset
+  c_interpolate(s1, s2)         string concatenation
+  c_argc()                      get CLI argument count
+  c_argv(index)                 get CLI argument by index
+  show(value)                   print value + newline
+
+These are mapped to LLVM IR declarations:
+  declare ptr @n0_c_alloc(i64)
+  declare void @n0_c_store_int(ptr, i64, i64)
+  declare void @n0_show_string(ptr)
+  etc.
+
+----------------------------------------------------------------
+CALLING C FROM n0ne (FUTURE)
+----------------------------------------------------------------
+
+Declare C function signature in n0ne:
+
+  extern "c" fn malloc(size: int) -> ptr
+  extern "c" fn free(p: ptr)
+  extern "c" fn printf(fmt: string, ...) -> int
+
+Use it:
+  extern "c" fn strlen(s: string) -> int
+
+  len = strlen("hello")
+  show(len)
+
+Compiler emits LLVM IR `declare` for external C functions.
+Clang links against the specified libraries.
+
+----------------------------------------------------------------
+CALLING n0ne FROM C (FUTURE)
+----------------------------------------------------------------
+
+Mark n0ne function as exported:
+
+  export fn add(a: int, b: int) -> int
+      return a + b
+
+Compiler emits LLVM IR with C-compatible symbol:
+  define i64 @n0_add(i64 %a, i64 %b) { ... }
+
+C code links against the compiled object.
+
+----------------------------------------------------------------
+TYPES MAPPING
+----------------------------------------------------------------
+
+n0ne type       LLVM IR type    C type
+-----------     -----------     --------
+int             i64             int64_t / size_t
+float           double          double
+bool            i64 (0 or 1)    int
+string          ptr             char*
+ptr             ptr             void*
+option[T]       ptr             T* (NULL = none)
+
+All types use 8-byte alignment.
+Structs are flat memory blocks accessed via offset arithmetic.
+
+----------------------------------------------------------------
+LINKING
+----------------------------------------------------------------
+
+n0ne.toml can specify C libraries to link:
+
+  [link]
+  libs = ["ssl", "crypto", "sqlite3"]
+
+Compiler passes -lssl -lcrypto -lsqlite3 to clang.
+
+Current linking pipeline:
+  1. LLVM IR written to temp file
+  2. Embedded C runtime written to temp file
+  3. clang compiles and links both:
+     clang module.ll runtime.c -o binary -O2
+
+----------------------------------------------------------------
+SAFETY RULES (FUTURE)
+----------------------------------------------------------------
+
+FFI calls outside unsafe block = compile error.
+ptr type outside unsafe block = compile error.
+extern fn must have full type signature.
+
+================================================================

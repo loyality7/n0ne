@@ -1,0 +1,96 @@
+================================================================
+n0ne — CONCURRENCY MODEL
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+Phase 1 (v0.1 - v0.3): NO concurrency.
+Phase 2 (v0.5+): Structured concurrency via spawn + channels.
+
+Do not add concurrency until language is stable.
+Wrong concurrency model = permanent language scar.
+
+----------------------------------------------------------------
+PHASE 2 MODEL — STRUCTURED CONCURRENCY
+----------------------------------------------------------------
+
+Inspired by: Go channels + structured concurrency principles.
+NOT callbacks. NOT async/await (too complex for n0ne goal).
+
+SPAWN:
+  spawn fn_name(args)
+
+  Runs fn in separate thread.
+  Thread is owned by current scope.
+  Scope cannot exit until spawned thread finishes.
+  No orphan threads. No detached threads.
+
+CHANNELS:
+  ch = channel[string]()
+
+  Send:
+    ch.send("hello")
+
+  Receive (blocks):
+    msg = ch.receive()
+
+EXAMPLE:
+  fn worker(ch: channel[string])
+      result = do_work()
+      ch.send(result)
+
+  fn main()
+      ch = channel[string]()
+      spawn worker(ch)
+      result = ch.receive()
+      show(result)
+
+----------------------------------------------------------------
+HTTP SERVER CONCURRENCY
+----------------------------------------------------------------
+
+stdlib http handles concurrency internally.
+User code does not manage threads for HTTP.
+
+  server 8080
+
+  route "/users"
+      return users
+
+Each request handled in own thread by runtime.
+User sees single-threaded code. Runtime handles rest.
+Same model as Go's net/http.
+
+----------------------------------------------------------------
+WHAT WE DO NOT SUPPORT
+----------------------------------------------------------------
+
+No async/await syntax.
+No futures/promises.
+No callbacks.
+No shared mutable state between threads (no mutex exposed).
+No green threads (too complex for Phase 1 runtime).
+
+----------------------------------------------------------------
+DATA SHARING BETWEEN THREADS
+----------------------------------------------------------------
+
+Channels only. No shared memory.
+Values sent through channel are COPIED.
+No data races by design.
+
+If value is large, wrap in rc[T] — shared read-only.
+Mutable shared state = not supported. Use channel instead.
+
+----------------------------------------------------------------
+IMPLEMENTATION
+----------------------------------------------------------------
+
+Runtime uses OS threads (pthreads on Linux, Win32 on Windows).
+Channel = mutex-protected queue in C runtime.
+spawn = pthread_create wrapped by runtime.
+Scope exit waits on all spawned threads (pthread_join).
+
+================================================================

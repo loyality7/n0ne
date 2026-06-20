@@ -1,0 +1,98 @@
+================================================================
+n0ne — MEMORY MODEL
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+Use Reference Counting (RC) with cycle detection.
+
+Why not GC:
+  Stop-the-world pauses = bad for CLI and servers.
+  Large runtime = violates single binary goal.
+
+Why not manual (Rust-style ownership):
+  Learning curve too high.
+  Violates "simple" goal.
+
+Why not Arena:
+  Good for compilers, bad for general apps.
+  Awkward lifetime for user code.
+
+Why RC:
+  Predictable deallocation.
+  No pauses.
+  Small runtime.
+  Swift and Python (CPython) prove it works at scale.
+
+----------------------------------------------------------------
+RULES
+----------------------------------------------------------------
+
+All heap values are reference counted.
+Stack values (int, float, bool) are copied.
+Strings are heap allocated, RC managed.
+Lists and maps are heap allocated, RC managed.
+Types (structs) are heap allocated, RC managed.
+
+When RC hits zero, memory freed immediately.
+No GC thread. No pause.
+
+----------------------------------------------------------------
+CYCLE DETECTION
+----------------------------------------------------------------
+
+Cycles are possible:
+  type Node
+      next : option[Node]
+
+Solution: weak references.
+  weak[T] — does not increment RC.
+  If original freed, weak becomes none.
+
+Syntax:
+  node.next = weak(other_node)
+
+Compiler warns if cycle possible without weak.
+
+----------------------------------------------------------------
+RUNTIME COST
+----------------------------------------------------------------
+
+RC increment/decrement on every assignment.
+Small overhead. Acceptable for target use cases.
+Not suitable for hot inner loops over millions of objects.
+That is not n0ne target anyway.
+
+----------------------------------------------------------------
+MEMORY LAYOUT
+----------------------------------------------------------------
+
+Every heap object:
+  [ RC count | type tag | data... ]
+
+RC count = 64-bit integer.
+Type tag = used by runtime for reflection (future).
+
+----------------------------------------------------------------
+STACK vs HEAP
+----------------------------------------------------------------
+
+STACK:
+  int, float, bool, function args, local primitives
+
+HEAP:
+  string, list, map, type instances, closures
+
+----------------------------------------------------------------
+IMPLEMENTATION
+----------------------------------------------------------------
+
+Runtime written in C.
+RC increment = n0_rc_inc(ptr)
+RC decrement = n0_rc_dec(ptr) — frees if zero
+Allocator = system malloc/free to start
+Future: custom allocator for small objects
+
+================================================================

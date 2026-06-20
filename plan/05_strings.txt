@@ -1,0 +1,143 @@
+================================================================
+n0ne — STRING HANDLING
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+Strings are UTF-8 encoded.
+Strings are immutable.
+RC managed on heap.
+Length stored alongside data (not null-terminated internally).
+Null-terminated copy made only when passing to C via FFI.
+
+----------------------------------------------------------------
+LITERALS
+----------------------------------------------------------------
+
+  name = "sarath"
+  msg  = "hello world"
+
+Escape sequences:
+  \n    newline
+  \t    tab
+  \\    backslash
+  \"    double quote
+  \0    null byte (only for FFI use)
+
+----------------------------------------------------------------
+INTERPOLATION
+----------------------------------------------------------------
+
+Use {} inside string with f prefix:
+
+  name = "sarath"
+  msg  = f"hello {name}"
+  show(msg)           <- hello sarath
+
+Expressions inside {}:
+  show(f"age next year: {age + 1}")
+
+Nested strings not allowed inside {}:
+  f"hello {"world"}"  <- compile error, use variable instead
+
+----------------------------------------------------------------
+MULTILINE STRINGS
+----------------------------------------------------------------
+
+  text = """
+  line one
+  line two
+  line three
+  """
+
+Leading newline after """ is stripped.
+Trailing newline before """ is stripped.
+Indentation NOT stripped automatically. Use trim() if needed.
+
+----------------------------------------------------------------
+STRING OPERATIONS
+----------------------------------------------------------------
+
+Concatenation:
+  full = first + " " + last
+
+Length (in characters, not bytes):
+  n = name.len()
+
+Byte length:
+  n = name.byte_len()
+
+Slice (returns new string):
+  sub = name.slice(0, 3)
+
+Contains:
+  if name.contains("sar")
+
+Starts/ends:
+  if name.starts_with("sar")
+  if name.ends_with("ath")
+
+Split:
+  parts = "a,b,c".split(",")   <- returns list[string]
+
+Join:
+  result = ",".join(parts)
+
+Trim:
+  clean = "  hello  ".trim()
+
+Replace:
+  new = name.replace("old", "new")
+
+To uppercase / lowercase:
+  up  = name.upper()
+  low = name.lower()
+
+Parse to number:
+  n = "42".to_int()     <- returns option[int]
+  f = "3.14".to_float() <- returns option[float]
+
+----------------------------------------------------------------
+NUMERIC TO STRING
+----------------------------------------------------------------
+
+  n   = 42
+  s   = n.to_string()     <- "42"
+  msg = f"value is {n}"   <- interpolation handles this
+
+----------------------------------------------------------------
+COMPARISON
+----------------------------------------------------------------
+
+  if a == b       value equality
+  if a != b
+
+String comparison is byte-wise (UTF-8 order).
+No locale-aware comparison in stdlib v1. Future feature.
+
+----------------------------------------------------------------
+STRING TYPE IN MEMORY
+----------------------------------------------------------------
+
+Heap layout:
+  [ RC | len (u64) | data (UTF-8 bytes) ]
+
+Slice shares same backing data with incremented RC.
+Immutability means slices are always safe.
+
+----------------------------------------------------------------
+C FFI STRINGS
+----------------------------------------------------------------
+
+When passing string to extern C fn:
+  Runtime creates null-terminated copy automatically.
+  Original string unchanged.
+  Caller responsible for not holding pointer after string freed.
+
+When receiving char* from C:
+  Use string.from_c_ptr(ptr) to create n0ne string.
+  Copies data. Runtime owns new copy.
+
+================================================================

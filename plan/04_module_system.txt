@@ -1,0 +1,132 @@
+================================================================
+n0ne — MODULE SYSTEM
+================================================================
+
+----------------------------------------------------------------
+DECISION
+----------------------------------------------------------------
+
+One file = one module.
+One folder with n0ne.toml = one package.
+Packages have a name and version.
+
+----------------------------------------------------------------
+IMPORT SYNTAX
+----------------------------------------------------------------
+
+Stdlib:
+  use io
+  use fs
+  use http
+  use json
+
+Local file (same package):
+  use ./utils
+  use ./db/queries
+
+External package:
+  use pkg/sqlite
+  use pkg/dotenv
+
+After import, use module name to access:
+  io.show("hello")
+  http.get("https://example.com")
+
+Or import specific names:
+  use io { show, read }
+  show("hello")
+
+----------------------------------------------------------------
+MODULE FILE RULES
+----------------------------------------------------------------
+
+File: utils.n0
+  fn helper(x: int) -> int
+      return x + 1
+
+Use in main.n0:
+  use ./utils
+  result = utils.helper(5)
+
+Everything in a file is PUBLIC by default.
+Mark private with priv keyword:
+  priv fn internal_helper()
+      ...
+
+----------------------------------------------------------------
+PACKAGE MANIFEST — n0ne.toml
+----------------------------------------------------------------
+
+  [package]
+  name    = "myapp"
+  version = "0.1.0"
+  author  = "sarath"
+
+  [deps]
+  sqlite = "1.2.0"
+  dotenv = "0.3.1"
+
+  [link]
+  libs = ["sqlite3"]
+
+----------------------------------------------------------------
+LOCK FILE — n0ne.lock
+----------------------------------------------------------------
+
+Auto-generated. Never edit by hand.
+Pins exact versions of all deps.
+Commit to git. Always.
+
+Format:
+  [[package]]
+  name    = "sqlite"
+  version = "1.2.0"
+  hash    = "sha256:abc123..."
+
+----------------------------------------------------------------
+PACKAGE REGISTRY
+----------------------------------------------------------------
+
+Phase 1: Git-based.
+  n0ne add github.com/user/pkg
+
+Phase 2: Central registry at registry.n0ne.dev (future).
+  n0ne add sqlite
+
+Packages downloaded to ~/.n0ne/cache/
+Reused across projects.
+
+----------------------------------------------------------------
+VERSIONING RULES
+----------------------------------------------------------------
+
+Follows semver: MAJOR.MINOR.PATCH
+Breaking change = bump MAJOR.
+New feature = bump MINOR.
+Bug fix = bump PATCH.
+
+In n0ne.toml:
+  sqlite = "1.2.0"   exact
+  sqlite = "^1.2.0"  compatible (>=1.2.0 <2.0.0)
+  sqlite = "*"       latest (not recommended)
+
+----------------------------------------------------------------
+CIRCULAR IMPORTS
+----------------------------------------------------------------
+
+Circular imports = compile error.
+  A imports B, B imports A = error.
+Restructure into shared C module instead.
+
+----------------------------------------------------------------
+INIT FILE
+----------------------------------------------------------------
+
+Folder package entry point = mod.n0
+  mypackage/
+      mod.n0       <- entry, re-exports what package exposes
+      internal.n0  <- private helpers
+
+  use ./mypackage  <- loads mypackage/mod.n0
+
+================================================================
