@@ -93,7 +93,15 @@ if (-not (Test-Path $binary)) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstDir | Out-Null
-Copy-Item $binary (Join-Path $InstDir $BinName) -Force
+$targetPath = Join-Path $InstDir $BinName
+if (Test-Path $targetPath) {
+    $oldPath = "$targetPath.old"
+    if (Test-Path $oldPath) {
+        Remove-Item $oldPath -Force -ErrorAction SilentlyContinue
+    }
+    Rename-Item $targetPath ($BinName + ".old") -Force -ErrorAction SilentlyContinue
+}
+Copy-Item $binary $targetPath -Force
 Remove-Item $tmp -Recurse -Force
 
 # ── Add to user PATH if not already there ────────────────────────────────────
