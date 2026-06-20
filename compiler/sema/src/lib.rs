@@ -60,6 +60,16 @@ impl SymbolTable {
         None
     }
 
+    pub fn update(&mut self, name: &str, info: SymbolInfo) -> bool {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(name) {
+                scope.insert(name.to_string(), info);
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn insert_global(&mut self, name: String, info: SymbolInfo) -> bool {
         let global_scope = &mut self.scopes[0];
         if global_scope.contains_key(&name) {
@@ -116,6 +126,19 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
     }
 }
 
+fn types_match(expected: &Type, actual: &Type) -> bool {
+    match (expected, actual) {
+        (Type::Basic(e), _) if e == "unknown" => true,
+        (_, Type::Basic(a)) if a == "unknown" => true,
+        (Type::Basic(e), Type::Basic(a)) => e == a,
+        (Type::List(e), Type::List(a)) => types_match(e, a),
+        (Type::Map(ek, ev), Type::Map(ak, av)) => types_match(ek, ak) && types_match(ev, av),
+        (Type::Result(e), Type::Result(a)) => types_match(e, a),
+        (Type::Option(e), Type::Option(a)) => types_match(e, a),
+        _ => false,
+    }
+}
+
 pub struct TypeChecker {
     pub table: SymbolTable,
     pub errors: Vec<SemanticError>,
@@ -123,6 +146,7 @@ pub struct TypeChecker {
     pub imported_modules: HashMap<String, HashMap<String, SymbolInfo>>,
     pub import_stack: Vec<std::path::PathBuf>,
     pub current_file: Option<std::path::PathBuf>,
+    inside_loop: usize,
 }
 
 impl TypeChecker {
@@ -134,10 +158,27 @@ impl TypeChecker {
             imported_modules: HashMap::new(),
             import_stack: Vec::new(),
             current_file: None,
+            inside_loop: 0,
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())],
             ret_type: None,
+        });
+        tc.table.insert_global("ok".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("unknown".to_string())],
+            ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
+        });
+        tc.table.insert_global("err".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("string".to_string())],
+            ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
+        });
+        tc.table.insert_global("some".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("unknown".to_string())],
+            ret_type: Some(Type::Option(Box::new(Type::Basic("unknown".to_string())))),
+        });
+        tc.table.insert_global("none".to_string(), SymbolInfo::Function {
+            params: vec![],
+            ret_type: Some(Type::Option(Box::new(Type::Basic("unknown".to_string())))),
         });
         tc.table.insert_global("print".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())],
@@ -227,6 +268,13 @@ impl TypeChecker {
                             hint: "Ensure all tasks have unique names.".to_string(),
                         });
                     }
+                }
+                TopLevelDecl::TypeDecl(t) => {
+                    let info = SymbolInfo::Function {
+                        params: vec![],
+                        ret_type: Some(Type::Basic(t.name.clone())),
+                    };
+                    self.table.insert_global(t.name.clone(), info);
                 }
                 _ => {}
             }
@@ -397,6 +445,13 @@ impl TypeChecker {
         self.current_fn_return_type = decl.return_type.clone();
         self.table.enter_scope();
 
+        if let Some(recv) = &decl.receiver {
+            self.table.insert(
+                "self".to_string(),
+                SymbolInfo::Variable(Type::Basic(recv.type_name.clone())),
+            );
+        }
+
         for param in &decl.params {
             self.table.insert(
                 param.name.clone(),
@@ -436,8 +491,21 @@ impl TypeChecker {
     }
 
     fn check_block(&mut self, block: &Block) {
+        let mut returned = false;
         for stmt in &block.stmts {
+            if returned {
+                self.errors.push(SemanticError {
+                    line: 0,
+                    column: 0,
+                    code: "E007".to_string(),
+                    message: "unreachable code detected after return".to_string(),
+                    hint: "Remove or move the statements after return.".to_string(),
+                });
+            }
             self.check_stmt(stmt);
+            if let Stmt::Return(_) = stmt {
+                returned = true;
+            }
         }
     }
 
@@ -460,7 +528,7 @@ impl TypeChecker {
                 if lhs_type != Type::Basic("unknown".to_string())
                     && rhs_type != Type::Basic("unknown".to_string())
                 {
-                    if lhs_type != rhs_type {
+                    if !types_match(&lhs_type, &rhs_type) {
                         self.errors.push(SemanticError {
                             line: 0,
                             column: 0,
@@ -543,10 +611,88 @@ impl TypeChecker {
                     _ => Type::Basic("unknown".to_string()),
                 };
 
+                self.inside_loop += 1;
                 self.table.enter_scope();
                 self.table.insert(var.clone(), SymbolInfo::Variable(var_type));
                 self.check_block(body);
                 self.table.exit_scope();
+                self.inside_loop -= 1;
+            }
+            Stmt::While { cond, body } => {
+                let cond_type = self.infer_expr(cond);
+                if cond_type != Type::Basic("bool".to_string())
+                    && cond_type != Type::Basic("unknown".to_string())
+                {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E001".to_string(),
+                        message: format!(
+                            "type mismatch: while condition expected 'bool', found '{:?}'",
+                            cond_type
+                        ),
+                        hint: "Use a boolean expression in while condition.".to_string(),
+                    });
+                }
+
+                self.inside_loop += 1;
+                self.table.enter_scope();
+                self.check_block(body);
+                self.table.exit_scope();
+                self.inside_loop -= 1;
+            }
+            Stmt::Break => {
+                if self.inside_loop == 0 {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E014".to_string(),
+                        message: "break statement outside of loop".to_string(),
+                        hint: "break can only be used inside for or while loops.".to_string(),
+                    });
+                }
+            }
+            Stmt::Continue => {
+                if self.inside_loop == 0 {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E015".to_string(),
+                        message: "continue statement outside of loop".to_string(),
+                        hint: "continue can only be used inside for or while loops.".to_string(),
+                    });
+                }
+            }
+            Stmt::Match { expr, cases } => {
+                let expr_type = self.infer_expr(expr);
+                for (arm, body) in cases {
+                    match arm {
+                        MatchArm::Literal(lit) => {
+                            let arm_type = match lit {
+                                Literal::Int(_) => Type::Basic("int".to_string()),
+                                Literal::Float(_) => Type::Basic("float".to_string()),
+                                Literal::String(_) => Type::Basic("string".to_string()),
+                                Literal::Bool(_) => Type::Basic("bool".to_string()),
+                            };
+                            if !types_match(&arm_type, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
+                                self.errors.push(SemanticError {
+                                    line: 0,
+                                    column: 0,
+                                    code: "E001".to_string(),
+                                    message: format!(
+                                        "type mismatch: match pattern type '{:?}' does not match expression type '{:?}'",
+                                        arm_type, expr_type
+                                    ),
+                                    hint: "All match patterns must match the type of the matched expression.".to_string(),
+                                });
+                            }
+                        }
+                        MatchArm::Wildcard => {}
+                    }
+                    self.table.enter_scope();
+                    self.check_block(body);
+                    self.table.exit_scope();
+                }
             }
             Stmt::Return(expr_opt) => {
                 let actual = if let Some(e) = expr_opt {
@@ -556,7 +702,7 @@ impl TypeChecker {
                 };
 
                 if let Some(expected) = &self.current_fn_return_type {
-                    if expected != &actual && actual != Type::Basic("unknown".to_string()) {
+                    if !types_match(expected, &actual) && actual != Type::Basic("unknown".to_string()) {
                         self.errors.push(SemanticError {
                             line: 0,
                             column: 0,
@@ -666,7 +812,7 @@ impl TypeChecker {
                             for (i, arg) in args.iter().enumerate() {
                                 let arg_type = self.infer_expr(arg);
                                 let expected_type = &params[i];
-                                if &arg_type != expected_type
+                                 if !types_match(expected_type, &arg_type)
                                     && arg_type != Type::Basic("unknown".to_string())
                                     && expected_type != &Type::Basic("unknown".to_string())
                                 {
@@ -684,7 +830,15 @@ impl TypeChecker {
                                 }
                             }
                         }
-                        return ret_type.unwrap_or(Type::Basic("void".to_string()));
+                        let mut resolved_ret_type = ret_type.clone().unwrap_or(Type::Basic("void".to_string()));
+                        if name == "some" && !args.is_empty() {
+                            let arg_type = self.infer_expr(&args[0]);
+                            resolved_ret_type = Type::Option(Box::new(arg_type));
+                        } else if name == "ok" && !args.is_empty() {
+                            let arg_type = self.infer_expr(&args[0]);
+                            resolved_ret_type = Type::Result(Box::new(arg_type));
+                        }
+                        return resolved_ret_type;
                     } else if self.table.lookup(name).is_none() {
                         self.errors.push(SemanticError {
                             line: 0,
@@ -716,7 +870,7 @@ impl TypeChecker {
                                 for (i, arg) in args.iter().enumerate() {
                                     let arg_type = self.infer_expr(arg);
                                     let expected_type = &params[i];
-                                    if &arg_type != expected_type
+                                    if !types_match(expected_type, &arg_type)
                                         && arg_type != Type::Basic("unknown".to_string())
                                         && expected_type != &Type::Basic("unknown".to_string())
                                     {
@@ -737,10 +891,31 @@ impl TypeChecker {
                         }
                     }
 
-                    let receiver_ty = self.infer_expr(receiver);
+                    let mut receiver_ty = self.infer_expr(receiver);
                     let mut arg_types = Vec::new();
                     for arg in args {
                         arg_types.push(self.infer_expr(arg));
+                    }
+                    if method_name == "set" && arg_types.len() == 2 {
+                        if let Expr::Ident(var_name) = &**receiver {
+                            if let Type::Map(k_ty, v_ty) = &receiver_ty {
+                                if **k_ty == Type::Basic("unknown".to_string()) || **v_ty == Type::Basic("unknown".to_string()) {
+                                    let new_k = if **k_ty == Type::Basic("unknown".to_string()) {
+                                        arg_types[0].clone()
+                                    } else {
+                                        (**k_ty).clone()
+                                    };
+                                    let new_v = if **v_ty == Type::Basic("unknown".to_string()) {
+                                        arg_types[1].clone()
+                                    } else {
+                                        (**v_ty).clone()
+                                    };
+                                    let refined_ty = Type::Map(Box::new(new_k), Box::new(new_v));
+                                    self.table.update(var_name, SymbolInfo::Variable(refined_ty.clone()));
+                                    receiver_ty = refined_ty;
+                                }
+                            }
+                        }
                     }
                     match &receiver_ty {
                         Type::Basic(name) if name == "string" => {
@@ -751,6 +926,12 @@ impl TypeChecker {
                                 "split" => return Type::List(Box::new(Type::Basic("string".to_string()))),
                                 "to_int" => return Type::Option(Box::new(Type::Basic("int".to_string()))),
                                 "to_float" => return Type::Option(Box::new(Type::Basic("float".to_string()))),
+                                _ => {}
+                            }
+                        }
+                        Type::Basic(name) if name == "bool" => {
+                            match method_name.as_str() {
+                                "to_string" => return Type::Basic("string".to_string()),
                                 _ => {}
                             }
                         }
@@ -784,6 +965,20 @@ impl TypeChecker {
                                 "has" => return Type::Basic("bool".to_string()),
                                 "keys" => return Type::List(Box::new(Type::Basic("string".to_string()))),
                                 "values" => return Type::List(val_ty.clone()),
+                                _ => {}
+                            }
+                        }
+                        Type::Option(inner) => {
+                            match method_name.as_str() {
+                                "unwrap" => return *inner.clone(),
+                                "is_some" | "is_none" => return Type::Basic("bool".to_string()),
+                                _ => {}
+                            }
+                        }
+                        Type::Result(inner) => {
+                            match method_name.as_str() {
+                                "unwrap" => return *inner.clone(),
+                                "is_ok" | "is_err" => return Type::Basic("bool".to_string()),
                                 _ => {}
                             }
                         }
