@@ -36,6 +36,8 @@ enum Commands {
     },
     /// Run all tests in current package
     Test,
+    /// Update the compiler to the latest version
+    Update,
     /// Print version
     Version,
 }
@@ -62,8 +64,11 @@ fn main() {
         Commands::Test => {
             println!("Running tests... ok");
         }
+        Commands::Update => {
+            update();
+        }
         Commands::Version => {
-            println!("n0ne version 0.1.0");
+            println!("n0ne version {}", env!("CARGO_PKG_VERSION"));
         }
     }
 }
@@ -127,3 +132,41 @@ fn build(file_path: &Path, debug: bool) -> PathBuf {
 
     exe_path
 }
+
+#[cfg(target_os = "windows")]
+fn update() {
+    println!("Checking for updates and upgrading n0ne compiler...");
+    let status = Command::new("powershell")
+        .args(&[
+            "-NoProfile",
+            "-Command",
+            "irm https://raw.githubusercontent.com/loyality7/n0ne/main/scripts/install.ps1 | iex"
+        ])
+        .status();
+    match status {
+        Ok(s) if s.success() => println!("Update completed successfully!"),
+        _ => {
+            eprintln!("error: update failed.");
+            exit(1);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn update() {
+    println!("Checking for updates and upgrading n0ne compiler...");
+    let status = Command::new("sh")
+        .args(&[
+            "-c",
+            "curl -fsSL https://raw.githubusercontent.com/loyality7/n0ne/main/scripts/install.sh | sh"
+        ])
+        .status();
+    match status {
+        Ok(s) if s.success() => println!("Update completed successfully!"),
+        _ => {
+            eprintln!("error: update failed.");
+            exit(1);
+        }
+    }
+}
+
