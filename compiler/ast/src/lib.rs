@@ -107,8 +107,24 @@ pub enum Stmt {
         iterable: Expr,
         body: Block,
     },
+    While {
+        cond: Expr,
+        body: Block,
+    },
+    Break,
+    Continue,
+    Match {
+        expr: Expr,
+        cases: Vec<(MatchArm, Block)>,
+    },
     Return(Option<Expr>),
     Expr(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MatchArm {
+    Literal(Literal),
+    Wildcard,
 }
 
 #[derive(Debug, Clone, PartialEq)]
