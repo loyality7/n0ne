@@ -1,0 +1,142 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: tokens5
+---
+[
+    Token {
+        kind: Task,
+        line: 1,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "items",
+        ),
+        line: 1,
+        column: 6,
+    },
+    Token {
+        kind: Newline,
+        line: 1,
+        column: 11,
+    },
+    Token {
+        kind: Indent,
+        line: 2,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "l",
+        ),
+        line: 2,
+        column: 5,
+    },
+    Token {
+        kind: Eq,
+        line: 2,
+        column: 7,
+    },
+    Token {
+        kind: LBracket,
+        line: 2,
+        column: 9,
+    },
+    Token {
+        kind: Number(
+            1,
+        ),
+        line: 2,
+        column: 10,
+    },
+    Token {
+        kind: Comma,
+        line: 2,
+        column: 11,
+    },
+    Token {
+        kind: Number(
+            2,
+        ),
+        line: 2,
+        column: 13,
+    },
+    Token {
+        kind: Comma,
+        line: 2,
+        column: 14,
+    },
+    Token {
+        kind: Number(
+            3,
+        ),
+        line: 2,
+        column: 16,
+    },
+    Token {
+        kind: RBracket,
+        line: 2,
+        column: 17,
+    },
+    Token {
+        kind: Newline,
+        line: 2,
+        column: 18,
+    },
+    Token {
+        kind: Ident(
+            "m",
+        ),
+        line: 3,
+        column: 5,
+    },
+    Token {
+        kind: Eq,
+        line: 3,
+        column: 7,
+    },
+    Token {
+        kind: LBrace,
+        line: 3,
+        column: 9,
+    },
+    Token {
+        kind: String(
+            "a",
+        ),
+        line: 3,
+        column: 10,
+    },
+    Token {
+        kind: Colon,
+        line: 3,
+        column: 13,
+    },
+    Token {
+        kind: Number(
+            1,
+        ),
+        line: 3,
+        column: 15,
+    },
+    Token {
+        kind: RBrace,
+        line: 3,
+        column: 16,
+    },
+    Token {
+        kind: Newline,
+        line: 3,
+        column: 17,
+    },
+    Token {
+        kind: Dedent,
+        line: 4,
+        column: 1,
+    },
+    Token {
+        kind: Eof,
+        line: 4,
+        column: 1,
+    },
+]

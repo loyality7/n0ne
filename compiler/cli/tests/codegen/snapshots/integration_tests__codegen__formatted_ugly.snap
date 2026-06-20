@@ -1,0 +1,6 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: pretty
+---
+task main
+    show("hi")

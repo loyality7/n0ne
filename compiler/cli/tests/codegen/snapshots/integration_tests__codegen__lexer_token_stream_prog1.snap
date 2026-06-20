@@ -1,0 +1,132 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: tokens1
+---
+[
+    Token {
+        kind: Fn,
+        line: 1,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "add",
+        ),
+        line: 1,
+        column: 4,
+    },
+    Token {
+        kind: LParen,
+        line: 1,
+        column: 7,
+    },
+    Token {
+        kind: Ident(
+            "a",
+        ),
+        line: 1,
+        column: 8,
+    },
+    Token {
+        kind: Colon,
+        line: 1,
+        column: 9,
+    },
+    Token {
+        kind: Ident(
+            "int",
+        ),
+        line: 1,
+        column: 11,
+    },
+    Token {
+        kind: Comma,
+        line: 1,
+        column: 14,
+    },
+    Token {
+        kind: Ident(
+            "b",
+        ),
+        line: 1,
+        column: 16,
+    },
+    Token {
+        kind: Colon,
+        line: 1,
+        column: 17,
+    },
+    Token {
+        kind: Ident(
+            "int",
+        ),
+        line: 1,
+        column: 19,
+    },
+    Token {
+        kind: RParen,
+        line: 1,
+        column: 22,
+    },
+    Token {
+        kind: Arrow,
+        line: 1,
+        column: 24,
+    },
+    Token {
+        kind: Ident(
+            "int",
+        ),
+        line: 1,
+        column: 27,
+    },
+    Token {
+        kind: Newline,
+        line: 1,
+        column: 30,
+    },
+    Token {
+        kind: Indent,
+        line: 2,
+        column: 1,
+    },
+    Token {
+        kind: Return,
+        line: 2,
+        column: 5,
+    },
+    Token {
+        kind: Ident(
+            "a",
+        ),
+        line: 2,
+        column: 12,
+    },
+    Token {
+        kind: Plus,
+        line: 2,
+        column: 14,
+    },
+    Token {
+        kind: Ident(
+            "b",
+        ),
+        line: 2,
+        column: 16,
+    },
+    Token {
+        kind: Newline,
+        line: 2,
+        column: 17,
+    },
+    Token {
+        kind: Dedent,
+        line: 3,
+        column: 1,
+    },
+    Token {
+        kind: Eof,
+        line: 3,
+        column: 1,
+    },
+]

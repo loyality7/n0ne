@@ -11,3 +11,8 @@ ast = { path = "../ast" }
 sema = { path = "../sema" }
 codegen_llvm = { path = "../codegen/llvm" }
 formatter = { path = "../../tools/formatter" }
+
+[dev-dependencies]
+insta = { version = "1.34.0", features = ["yaml"] }
+tempfile = "3.12.0"
+

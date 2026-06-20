@@ -1,0 +1,64 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: ast5
+---
+Program {
+    decls: [
+        TaskDecl(
+            TaskDecl {
+                name: "items",
+                body: Block {
+                    stmts: [
+                        Assign {
+                            target: Ident(
+                                "l",
+                            ),
+                            op: Eq,
+                            value: ListLiteral(
+                                [
+                                    Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    Literal(
+                                        Int(
+                                            3,
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        },
+                        Assign {
+                            target: Ident(
+                                "m",
+                            ),
+                            op: Eq,
+                            value: MapLiteral(
+                                [
+                                    (
+                                        Literal(
+                                            String(
+                                                "a",
+                                            ),
+                                        ),
+                                        Literal(
+                                            Int(
+                                                1,
+                                            ),
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        },
+                    ],
+                },
+            },
+        ),
+    ],
+}

@@ -1,0 +1,53 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: ast4
+---
+Program {
+    decls: [
+        TypeDecl(
+            TypeDecl {
+                name: "User",
+                fields: [
+                    Field {
+                        name: "name",
+                        type_ann: Basic(
+                            "string",
+                        ),
+                    },
+                ],
+            },
+        ),
+        FnDecl(
+            FnDecl {
+                name: "greet",
+                receiver: Some(
+                    Receiver {
+                        name: "self",
+                        type_name: "User",
+                    },
+                ),
+                params: [],
+                return_type: None,
+                body: Block {
+                    stmts: [
+                        Expr(
+                            CallExpr {
+                                callee: Ident(
+                                    "show",
+                                ),
+                                args: [
+                                    FieldAccess {
+                                        expr: Ident(
+                                            "self",
+                                        ),
+                                        field: "name",
+                                    },
+                                ],
+                            },
+                        ),
+                    ],
+                },
+            },
+        ),
+    ],
+}

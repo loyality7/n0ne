@@ -1,0 +1,82 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: ast2
+---
+Program {
+    decls: [
+        TaskDecl(
+            TaskDecl {
+                name: "loop",
+                body: Block {
+                    stmts: [
+                        Assign {
+                            target: Ident(
+                                "x",
+                            ),
+                            op: Eq,
+                            value: Literal(
+                                Int(
+                                    3,
+                                ),
+                            ),
+                        },
+                        While {
+                            cond: BinExpr {
+                                left: Ident(
+                                    "x",
+                                ),
+                                op: Gt,
+                                right: Literal(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                            },
+                            body: Block {
+                                stmts: [
+                                    If {
+                                        cond: BinExpr {
+                                            left: Ident(
+                                                "x",
+                                            ),
+                                            op: Eq,
+                                            right: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                        },
+                                        then_branch: Block {
+                                            stmts: [
+                                                Break,
+                                            ],
+                                        },
+                                        elifs: [],
+                                        else_branch: None,
+                                    },
+                                    Assign {
+                                        target: Ident(
+                                            "x",
+                                        ),
+                                        op: Eq,
+                                        value: BinExpr {
+                                            left: Ident(
+                                                "x",
+                                            ),
+                                            op: Sub,
+                                            right: Literal(
+                                                Int(
+                                                    1,
+                                                ),
+                                            ),
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        ),
+    ],
+}

@@ -1,0 +1,169 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: tokens4
+---
+[
+    Token {
+        kind: Type,
+        line: 1,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "User",
+        ),
+        line: 1,
+        column: 6,
+    },
+    Token {
+        kind: Newline,
+        line: 1,
+        column: 10,
+    },
+    Token {
+        kind: Indent,
+        line: 2,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "name",
+        ),
+        line: 2,
+        column: 5,
+    },
+    Token {
+        kind: Colon,
+        line: 2,
+        column: 9,
+    },
+    Token {
+        kind: Ident(
+            "string",
+        ),
+        line: 2,
+        column: 11,
+    },
+    Token {
+        kind: Newline,
+        line: 2,
+        column: 17,
+    },
+    Token {
+        kind: Dedent,
+        line: 3,
+        column: 1,
+    },
+    Token {
+        kind: Fn,
+        line: 3,
+        column: 1,
+    },
+    Token {
+        kind: LParen,
+        line: 3,
+        column: 4,
+    },
+    Token {
+        kind: Ident(
+            "self",
+        ),
+        line: 3,
+        column: 5,
+    },
+    Token {
+        kind: Colon,
+        line: 3,
+        column: 9,
+    },
+    Token {
+        kind: Ident(
+            "User",
+        ),
+        line: 3,
+        column: 11,
+    },
+    Token {
+        kind: RParen,
+        line: 3,
+        column: 15,
+    },
+    Token {
+        kind: Ident(
+            "greet",
+        ),
+        line: 3,
+        column: 17,
+    },
+    Token {
+        kind: LParen,
+        line: 3,
+        column: 22,
+    },
+    Token {
+        kind: RParen,
+        line: 3,
+        column: 23,
+    },
+    Token {
+        kind: Newline,
+        line: 3,
+        column: 24,
+    },
+    Token {
+        kind: Indent,
+        line: 4,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "show",
+        ),
+        line: 4,
+        column: 5,
+    },
+    Token {
+        kind: LParen,
+        line: 4,
+        column: 9,
+    },
+    Token {
+        kind: Ident(
+            "self",
+        ),
+        line: 4,
+        column: 10,
+    },
+    Token {
+        kind: Dot,
+        line: 4,
+        column: 14,
+    },
+    Token {
+        kind: Ident(
+            "name",
+        ),
+        line: 4,
+        column: 15,
+    },
+    Token {
+        kind: RParen,
+        line: 4,
+        column: 19,
+    },
+    Token {
+        kind: Newline,
+        line: 4,
+        column: 20,
+    },
+    Token {
+        kind: Dedent,
+        line: 5,
+        column: 1,
+    },
+    Token {
+        kind: Eof,
+        line: 5,
+        column: 1,
+    },
+]

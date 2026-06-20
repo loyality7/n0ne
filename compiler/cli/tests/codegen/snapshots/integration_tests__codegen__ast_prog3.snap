@@ -1,0 +1,81 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: ast3
+---
+Program {
+    decls: [
+        TaskDecl(
+            TaskDecl {
+                name: "matching",
+                body: Block {
+                    stmts: [
+                        Assign {
+                            target: Ident(
+                                "s",
+                            ),
+                            op: Eq,
+                            value: Literal(
+                                String(
+                                    "hello",
+                                ),
+                            ),
+                        },
+                        Match {
+                            expr: Ident(
+                                "s",
+                            ),
+                            cases: [
+                                (
+                                    Literal(
+                                        String(
+                                            "hello",
+                                        ),
+                                    ),
+                                    Block {
+                                        stmts: [
+                                            Expr(
+                                                CallExpr {
+                                                    callee: Ident(
+                                                        "show",
+                                                    ),
+                                                    args: [
+                                                        Literal(
+                                                            String(
+                                                                "hi",
+                                                            ),
+                                                        ),
+                                                    ],
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                (
+                                    Wildcard,
+                                    Block {
+                                        stmts: [
+                                            Expr(
+                                                CallExpr {
+                                                    callee: Ident(
+                                                        "show",
+                                                    ),
+                                                    args: [
+                                                        Literal(
+                                                            String(
+                                                                "no",
+                                                            ),
+                                                        ),
+                                                    ],
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                        },
+                    ],
+                },
+            },
+        ),
+    ],
+}

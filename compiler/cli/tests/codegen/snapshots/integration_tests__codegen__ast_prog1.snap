@@ -1,0 +1,50 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: ast1
+---
+Program {
+    decls: [
+        FnDecl(
+            FnDecl {
+                name: "add",
+                receiver: None,
+                params: [
+                    Param {
+                        name: "a",
+                        type_ann: Basic(
+                            "int",
+                        ),
+                    },
+                    Param {
+                        name: "b",
+                        type_ann: Basic(
+                            "int",
+                        ),
+                    },
+                ],
+                return_type: Some(
+                    Basic(
+                        "int",
+                    ),
+                ),
+                body: Block {
+                    stmts: [
+                        Return(
+                            Some(
+                                BinExpr {
+                                    left: Ident(
+                                        "a",
+                                    ),
+                                    op: Add,
+                                    right: Ident(
+                                        "b",
+                                    ),
+                                },
+                            ),
+                        ),
+                    ],
+                },
+            },
+        ),
+    ],
+}

@@ -1,0 +1,171 @@
+---
+source: compiler/cli/tests/codegen/mod.rs
+expression: tokens3
+---
+[
+    Token {
+        kind: Task,
+        line: 1,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "matching",
+        ),
+        line: 1,
+        column: 6,
+    },
+    Token {
+        kind: Newline,
+        line: 1,
+        column: 14,
+    },
+    Token {
+        kind: Indent,
+        line: 2,
+        column: 1,
+    },
+    Token {
+        kind: Ident(
+            "s",
+        ),
+        line: 2,
+        column: 5,
+    },
+    Token {
+        kind: Eq,
+        line: 2,
+        column: 7,
+    },
+    Token {
+        kind: String(
+            "hello",
+        ),
+        line: 2,
+        column: 9,
+    },
+    Token {
+        kind: Newline,
+        line: 2,
+        column: 16,
+    },
+    Token {
+        kind: Match,
+        line: 3,
+        column: 5,
+    },
+    Token {
+        kind: Ident(
+            "s",
+        ),
+        line: 3,
+        column: 11,
+    },
+    Token {
+        kind: Newline,
+        line: 3,
+        column: 12,
+    },
+    Token {
+        kind: Indent,
+        line: 4,
+        column: 1,
+    },
+    Token {
+        kind: String(
+            "hello",
+        ),
+        line: 4,
+        column: 9,
+    },
+    Token {
+        kind: Arrow,
+        line: 4,
+        column: 17,
+    },
+    Token {
+        kind: Ident(
+            "show",
+        ),
+        line: 4,
+        column: 20,
+    },
+    Token {
+        kind: LParen,
+        line: 4,
+        column: 24,
+    },
+    Token {
+        kind: String(
+            "hi",
+        ),
+        line: 4,
+        column: 25,
+    },
+    Token {
+        kind: RParen,
+        line: 4,
+        column: 29,
+    },
+    Token {
+        kind: Newline,
+        line: 4,
+        column: 30,
+    },
+    Token {
+        kind: Ident(
+            "_",
+        ),
+        line: 5,
+        column: 9,
+    },
+    Token {
+        kind: Arrow,
+        line: 5,
+        column: 11,
+    },
+    Token {
+        kind: Ident(
+            "show",
+        ),
+        line: 5,
+        column: 14,
+    },
+    Token {
+        kind: LParen,
+        line: 5,
+        column: 18,
+    },
+    Token {
+        kind: String(
+            "no",
+        ),
+        line: 5,
+        column: 19,
+    },
+    Token {
+        kind: RParen,
+        line: 5,
+        column: 23,
+    },
+    Token {
+        kind: Newline,
+        line: 5,
+        column: 24,
+    },
+    Token {
+        kind: Dedent,
+        line: 6,
+        column: 1,
+    },
+    Token {
+        kind: Dedent,
+        line: 6,
+        column: 1,
+    },
+    Token {
+        kind: Eof,
+        line: 6,
+        column: 1,
+    },
+]
