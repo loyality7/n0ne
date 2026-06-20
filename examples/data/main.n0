@@ -1,0 +1,25 @@
+use fs
+use json
+
+task main
+    # Write sample json config
+    res = fs.write("config.json", "{\"app\": \"demo\", \"port\": \"8080\"}")
+    if res.is_err
+        print_err("Failed to write file: " + res.error)
+        return
+
+    # Read it back and unwrap
+    res_read = fs.read("config.json")
+    if res_read.is_ok
+        content = res_read.unwrap()
+        print("File Content: " + content)
+
+        # Decode and parse values using unwrap
+        res_json = json.decode(content)
+        if res_json.is_ok
+            cfg = res_json.unwrap()
+            if cfg.has("app")
+                print("App name is present")
+
+    # Clean up
+    del_res = fs.delete("config.json")

@@ -1,0 +1,7 @@
+task main
+    count = c_argc()
+    print("CLI argument count: " + count.to_string())
+    for i in [0, 1, 2, 3]
+        if i < count
+            arg = c_argv(i)
+            print("arg " + i.to_string() + ": " + arg)
