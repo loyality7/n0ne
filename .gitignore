@@ -6,3 +6,6 @@ dist/
 *.dll
 *.log
 plan.txt
+.vs/
+test.txt
+plan/
