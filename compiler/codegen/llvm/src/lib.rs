@@ -22,6 +22,9 @@ pub struct LLVMGenerator {
     pub(crate) variables: HashMap<String, (String, Type)>,    // name -> (alloca_reg, type)
     pub(crate) structs: HashMap<String, TypeDecl>,
     pub(crate) current_ret_type: String,
+    pub(crate) functions: HashMap<String, Type>,
+    pub(crate) compiled_files: std::collections::HashSet<std::path::PathBuf>,
+    pub(crate) current_file: Option<std::path::PathBuf>,
 }
 
 impl LLVMGenerator {
@@ -36,14 +39,23 @@ impl LLVMGenerator {
             variables: HashMap::new(),
             structs: HashMap::new(),
             current_ret_type: "void".to_string(),
+            functions: HashMap::new(),
+            compiled_files: std::collections::HashSet::new(),
+            current_file: None,
         }
     }
 
     pub fn generate(&mut self, ast: &Program) -> String {
-        // Collect structs
+        // Collect structs and function return types
         for decl in &ast.decls {
-            if let ast::TopLevelDecl::TypeDecl(t) = decl {
-                self.structs.insert(t.name.clone(), t.clone());
+            match decl {
+                ast::TopLevelDecl::TypeDecl(t) => {
+                    self.structs.insert(t.name.clone(), t.clone());
+                }
+                ast::TopLevelDecl::FnDecl(f) => {
+                    self.functions.insert(f.name.clone(), f.return_type.clone().unwrap_or(Type::Basic("void".to_string())));
+                }
+                _ => {}
             }
         }
 
@@ -64,6 +76,20 @@ impl LLVMGenerator {
         self.globals.push_str("declare i64 @n0_c_argc()\n");
         self.globals.push_str("declare ptr @n0_c_argv(i64)\n");
         self.globals.push_str("declare double @pow(double, double)\n");
+        
+        // stdlib C runtime declarations
+        self.globals.push_str("declare void @n0_io_show_err(ptr)\n");
+        self.globals.push_str("declare ptr @n0_io_read()\n");
+        self.globals.push_str("declare ptr @n0_fs_read(ptr)\n");
+        self.globals.push_str("declare ptr @n0_fs_write(ptr, ptr)\n");
+        self.globals.push_str("declare i64 @n0_fs_exists(ptr)\n");
+        self.globals.push_str("declare ptr @n0_fs_delete(ptr)\n");
+        self.globals.push_str("declare ptr @n0_fs_mkdir(ptr)\n");
+        self.globals.push_str("declare ptr @n0_fs_list(ptr)\n");
+        self.globals.push_str("declare ptr @n0_json_encode(ptr)\n");
+        self.globals.push_str("declare ptr @n0_json_decode(ptr)\n");
+        self.globals.push_str("declare ptr @n0_http_get(ptr)\n");
+        self.globals.push_str("declare ptr @n0_http_post(ptr, ptr)\n");
         
         // String primitive methods
         self.globals.push_str("declare i64 @n0_str_len(ptr)\n");

@@ -50,6 +50,29 @@ impl LLVMGenerator {
                         return Type::Result(Box::new(Type::Basic("unknown".to_string())));
                     }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
+                    if let Expr::Ident(mod_name) = &**receiver {
+                        if self.variables.get(mod_name).is_none() {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" {
+                                match (mod_name.as_str(), method_name.as_str()) {
+                                    ("io", "read") => return Type::Basic("string".to_string()),
+                                    ("fs", "read") => return Type::Basic("string".to_string()),
+                                    ("fs", "write") => return Type::Basic("string".to_string()),
+                                    ("fs", "exists") => return Type::Basic("bool".to_string()),
+                                    ("fs", "delete") => return Type::Basic("string".to_string()),
+                                    ("fs", "mkdir") => return Type::Basic("string".to_string()),
+                                    ("fs", "list") => return Type::Basic("string".to_string()),
+                                    ("json", "encode") => return Type::Basic("string".to_string()),
+                                    ("json", "decode") => return Type::Basic("unknown".to_string()),
+                                    ("http", "get") => return Type::Basic("string".to_string()),
+                                    ("http", "post") => return Type::Basic("string".to_string()),
+                                    _ => {}
+                                }
+                            } else if let Some(ret_ty) = self.functions.get(method_name) {
+                                return ret_ty.clone();
+                            }
+                        }
+                    }
+
                     let receiver_ty = self.infer_expr_type(receiver);
                     match &receiver_ty {
                         Type::Basic(name) if name == "string" => {
@@ -155,6 +178,24 @@ impl LLVMGenerator {
                     (self.infer_expr_type(&pairs[0].0), self.infer_expr_type(&pairs[0].1))
                 };
                 Type::Map(Box::new(key_type), Box::new(val_type))
+            }
+            Expr::BinExpr { left, op, right } => {
+                let l_ty = self.infer_expr_type(left);
+                let r_ty = self.infer_expr_type(right);
+                match op {
+                    ast::BinOp::Eq | ast::BinOp::Ne | ast::BinOp::Lt | ast::BinOp::Gt | ast::BinOp::Le | ast::BinOp::Ge | ast::BinOp::And | ast::BinOp::Or => {
+                        Type::Basic("bool".to_string())
+                    }
+                    _ => {
+                        if l_ty == Type::Basic("string".to_string()) || r_ty == Type::Basic("string".to_string()) {
+                            Type::Basic("string".to_string())
+                        } else if l_ty == Type::Basic("float".to_string()) || r_ty == Type::Basic("float".to_string()) {
+                            Type::Basic("float".to_string())
+                        } else {
+                            Type::Basic("int".to_string())
+                        }
+                    }
+                }
             }
             Expr::FStringExpr(_) => Type::Basic("string".to_string()),
             _ => Type::Basic("int".to_string()),

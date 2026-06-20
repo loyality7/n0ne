@@ -219,6 +219,32 @@ impl LLVMGenerator {
                         r, op_instr, l_reg, r_reg
                     ));
                     r
+                } else if l_llvm_ty == "ptr" {
+                    if let BinOp::Add = op {
+                        let r = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = call ptr @n0_c_interpolate(ptr {}, ptr {})\n",
+                            r, l_reg, r_reg
+                        ));
+                        r
+                    } else {
+                        let cmp_op = match op {
+                            BinOp::Eq => "eq",
+                            BinOp::Ne => "ne",
+                            _ => "eq",
+                        };
+                        let cmp_res = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = icmp {} ptr {}, {}\n",
+                            cmp_res, cmp_op, l_reg, r_reg
+                        ));
+                        let r = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = zext i1 {} to i64\n",
+                            r, cmp_res
+                        ));
+                        r
+                    }
                 } else {
                     match op {
                         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod | BinOp::And | BinOp::Or => {
@@ -388,6 +414,117 @@ impl LLVMGenerator {
                         r
                     }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
+                    if let Expr::Ident(mod_name) = &**receiver {
+                        if self.variables.get(mod_name).is_none() {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" {
+                                if mod_name == "io" && method_name == "show" {
+                                    let first = args.first().unwrap();
+                                    let arg_reg = self.gen_expr(first);
+                                    let arg_ty = self.infer_expr_type(first);
+                                    let (fn_name, arg_llvm_ty) = match arg_ty {
+                                        Type::Basic(n) if n == "string" => ("n0_show_string", "ptr"),
+                                        Type::Basic(n) if n == "float" => ("n0_show_float", "double"),
+                                        _ => ("n0_show_int", "i64"),
+                                    };
+                                    self.body.push_str(&format!("    call void @{}({} {})\n", fn_name, arg_llvm_ty, arg_reg));
+                                    return "0".to_string();
+                                }
+                                
+                                if mod_name == "io" && method_name == "show_err" {
+                                    let first = args.first().unwrap();
+                                    let arg_reg = self.gen_expr(first);
+                                    let arg_ty = self.infer_expr_type(first);
+                                    let arg_llvm_ty = match arg_ty {
+                                        Type::Basic(n) if n == "string" => "ptr",
+                                        _ => "ptr",
+                                    };
+                                    let ptr_reg = if arg_llvm_ty == "ptr" {
+                                        arg_reg
+                                    } else if arg_llvm_ty == "double" {
+                                        let r = self.next_reg();
+                                        self.body.push_str(&format!("    {} = call ptr @n0_float_to_string(double {})\n", r, arg_reg));
+                                        r
+                                    } else {
+                                        let r = self.next_reg();
+                                        self.body.push_str(&format!("    {} = call ptr @n0_int_to_string(i64 {})\n", r, arg_reg));
+                                        r
+                                    };
+                                    self.body.push_str(&format!("    call void @n0_io_show_err(ptr {})\n", ptr_reg));
+                                    return "0".to_string();
+                                }
+
+                                let (fn_name, ret_llvm_ty) = match (mod_name.as_str(), method_name.as_str()) {
+                                    ("io", "read") => ("n0_io_read", "ptr"),
+                                    ("fs", "read") => ("n0_fs_read", "ptr"),
+                                    ("fs", "write") => ("n0_fs_write", "ptr"),
+                                    ("fs", "exists") => ("n0_fs_exists", "i64"),
+                                    ("fs", "delete") => ("n0_fs_delete", "ptr"),
+                                    ("fs", "mkdir") => ("n0_fs_mkdir", "ptr"),
+                                    ("fs", "list") => ("n0_fs_list", "ptr"),
+                                    ("json", "encode") => ("n0_json_encode", "ptr"),
+                                    ("json", "decode") => ("n0_json_decode", "ptr"),
+                                    ("http", "get") => ("n0_http_get", "ptr"),
+                                    ("http", "post") => ("n0_http_post", "ptr"),
+                                    _ => ("", ""),
+                                };
+
+                                if !fn_name.is_empty() {
+                                    let mut cast_args = Vec::new();
+                                    for arg in args {
+                                        let arg_reg = self.gen_expr(arg);
+                                        let arg_ty = self.infer_expr_type(arg);
+                                        let arg_llvm_ty = self.llvm_type(&arg_ty);
+                                        if arg_llvm_ty == "i64" {
+                                            let r = self.next_reg();
+                                            self.body.push_str(&format!("    {} = inttoptr i64 {} to ptr\n", r, arg_reg));
+                                            cast_args.push(format!("ptr {}", r));
+                                        } else if arg_llvm_ty == "double" {
+                                            let r1 = self.next_reg();
+                                            self.body.push_str(&format!("    {} = bitcast double {} to i64\n", r1, arg_reg));
+                                            let r2 = self.next_reg();
+                                            self.body.push_str(&format!("    {} = inttoptr i64 {} to ptr\n", r2, r1));
+                                            cast_args.push(format!("ptr {}", r2));
+                                        } else {
+                                            cast_args.push(format!("ptr {}", arg_reg));
+                                        }
+                                    }
+
+                                    let r = self.next_reg();
+                                    if ret_llvm_ty == "void" {
+                                        self.body.push_str(&format!("    call void @{}({})\n", fn_name, cast_args.join(", ")));
+                                        return "0".to_string();
+                                    } else {
+                                        self.body.push_str(&format!("    {} = call {} @{}({})\n", r, ret_llvm_ty, fn_name, cast_args.join(", ")));
+                                        return r;
+                                    }
+                                }
+                            } else {
+                                let llvm_name = format!("n0_{}", method_name);
+                                let mut arg_regs = Vec::new();
+                                for arg in args {
+                                    let arg_reg = self.gen_expr(arg);
+                                    let arg_ty = self.infer_expr_type(arg);
+                                    let arg_llvm_ty = self.llvm_type(&arg_ty);
+                                    arg_regs.push(format!("{} {}", arg_llvm_ty, arg_reg));
+                                }
+
+                                let mut ret_llvm_ty = "i64".to_string();
+                                if let Some(ret_ty) = self.functions.get(method_name) {
+                                    ret_llvm_ty = self.llvm_type(ret_ty);
+                                }
+
+                                let r = self.next_reg();
+                                if ret_llvm_ty == "void" {
+                                    self.body.push_str(&format!("    call void @{}({})\n", llvm_name, arg_regs.join(", ")));
+                                    return "0".to_string();
+                                } else {
+                                    self.body.push_str(&format!("    {} = call {} @{}({})\n", r, ret_llvm_ty, llvm_name, arg_regs.join(", ")));
+                                    return r;
+                                }
+                            }
+                        }
+                    }
+
                     let receiver_reg = self.gen_expr(receiver);
                     let receiver_ty = self.infer_expr_type(receiver);
                     let receiver_llvm_ty = self.llvm_type(&receiver_ty);

@@ -1,4 +1,4 @@
-use ast::{TopLevelDecl, FnDecl, TaskDecl, ConstDecl, Block, Expr, Literal, Stmt};
+use ast::{TopLevelDecl, FnDecl, TaskDecl, ConstDecl, Block, Expr, Literal, Stmt, Type};
 use crate::LLVMGenerator;
 
 pub(crate) fn block_has_return(block: &Block) -> bool {
@@ -102,8 +102,61 @@ impl LLVMGenerator {
             TopLevelDecl::FnDecl(f) => self.gen_fn(f),
             TopLevelDecl::TaskDecl(t) => self.gen_task(t),
             TopLevelDecl::ConstDecl(c) => self.gen_const(c),
+            TopLevelDecl::UseDecl(u) => {
+                if let ast::UseKind::Local = u.kind {
+                    let resolved_path = self.resolve_local_path(&u.path);
+                    if !self.compiled_files.contains(&resolved_path) {
+                        self.compiled_files.insert(resolved_path.clone());
+                        if let Ok(content) = std::fs::read_to_string(&resolved_path) {
+                            let tokens = lexer::Lexer::tokenize(&content);
+                            let mut parser = parser::Parser::new(tokens);
+                            let sub_prog = parser.parse();
+
+                            // Save current file and set sub file
+                            let old_file = self.current_file.clone();
+                            self.current_file = Some(resolved_path);
+
+                            // Collect structs and function return types
+                            for sub_decl in &sub_prog.decls {
+                                match sub_decl {
+                                    ast::TopLevelDecl::TypeDecl(t) => {
+                                        self.structs.insert(t.name.clone(), t.clone());
+                                    }
+                                    ast::TopLevelDecl::FnDecl(f) => {
+                                        self.functions.insert(f.name.clone(), f.return_type.clone().unwrap_or(Type::Basic("void".to_string())));
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            // Generate declarations recursively
+                            for sub_decl in &sub_prog.decls {
+                                self.gen_top_level(sub_decl);
+                            }
+
+                            // Restore
+                            self.current_file = old_file;
+                        }
+                    }
+                }
+            }
             _ => {}
         }
+    }
+
+    pub(crate) fn resolve_local_path(&self, import_path: &str) -> std::path::PathBuf {
+        let base_dir = if let Some(cf) = &self.current_file {
+            cf.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::env::current_dir().unwrap())
+        } else {
+            std::env::current_dir().unwrap()
+        };
+        let file_name = if import_path.ends_with(".n0") {
+            import_path.to_string()
+        } else {
+            format!("{}.n0", import_path)
+        };
+        let resolved = base_dir.join(file_name);
+        resolved.canonicalize().unwrap_or(resolved)
     }
 
     pub(crate) fn gen_fn(&mut self, f: &FnDecl) {

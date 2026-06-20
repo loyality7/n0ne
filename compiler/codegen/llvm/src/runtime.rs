@@ -592,4 +592,104 @@ double n0_int_to_float(int64_t n) {
 int64_t n0_float_to_int(double f) {
     return (int64_t)f;
 }
+
+// Stdlib IO / FS / JSON / HTTP implementations
+void n0_io_show_err(const char* s) {
+    printf("error: %s\n", s ? s : "");
+}
+
+char* n0_io_read() {
+    char buf[4096];
+    int c;
+    int idx = 0;
+    extern int getchar();
+    while (idx < 4095) {
+        c = getchar();
+        if (c == -1 || c == '\n') break;
+        buf[idx++] = c;
+    }
+    buf[idx] = '\0';
+    char* res = malloc(idx + 1);
+    if (res) {
+        for (int i = 0; i <= idx; i++) res[i] = buf[i];
+    }
+    return res ? res : "";
+}
+
+typedef struct FILE FILE;
+extern FILE* fopen(const char* filename, const char* mode);
+extern int fclose(FILE* stream);
+extern size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream);
+extern size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream);
+extern int fseek(FILE* stream, long int offset, int whence);
+extern long int ftell(FILE* stream);
+extern int remove(const char* filename);
+
+char* n0_fs_read(const char* path) {
+    if (!path) return "";
+    FILE* f = fopen(path, "rb");
+    if (!f) return "";
+    fseek(f, 0, 2);
+    long len = ftell(f);
+    fseek(f, 0, 0);
+    char* buf = malloc(len + 1);
+    if (buf) {
+        fread(buf, 1, len, f);
+        buf[len] = '\0';
+    }
+    fclose(f);
+    return buf ? buf : "";
+}
+
+char* n0_fs_write(const char* path, const char* content) {
+    if (!path) return "";
+    FILE* f = fopen(path, "wb");
+    if (!f) return "";
+    if (content) {
+        fwrite(content, 1, strlen(content), f);
+    }
+    fclose(f);
+    return "";
+}
+
+int64_t n0_fs_exists(const char* path) {
+    if (!path) return 0;
+    FILE* f = fopen(path, "r");
+    if (f) {
+        fclose(f);
+        return 1;
+    }
+    return 0;
+}
+
+char* n0_fs_delete(const char* path) {
+    if (path) {
+        remove(path);
+    }
+    return "";
+}
+
+char* n0_fs_mkdir(const char* path) {
+    return "";
+}
+
+char* n0_fs_list(const char* path) {
+    return "";
+}
+
+char* n0_json_encode(void* val) {
+    return "{}";
+}
+
+void* n0_json_decode(const char* s) {
+    return 0;
+}
+
+char* n0_http_get(const char* url) {
+    return "{}";
+}
+
+char* n0_http_post(const char* url, const char* body) {
+    return "{}";
+}
 "#;
