@@ -46,7 +46,17 @@ if (-not (Test-Clang)) {
     Install-Clang
 }
 
-Write-Host "==> clang found: $(Get-Command clang | Select-Object -ExpandProperty Source)"
+$clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+if (-not $clangCmd) {
+    # Check default LLVM installation path in Windows
+    if (Test-Path "C:\Program Files\LLVM\bin\clang.exe") {
+        $env:PATH += ";C:\Program Files\LLVM\bin"
+        $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+    }
+}
+
+$clangPath = if ($clangCmd) { $clangCmd.Source } else { "Clang installed (please restart terminal to refresh PATH)" }
+Write-Host "==> clang found: $clangPath"
 
 # ── Fetch latest release ──────────────────────────────────────────────────────
 Write-Host "==> Fetching latest n0ne release..."
