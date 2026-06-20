@@ -18,7 +18,12 @@ impl LLVMGenerator {
     pub(crate) fn infer_expr_type(&self, expr: &Expr) -> Type {
         match expr {
             Expr::Ident(name) => {
+                if name == "none" {
+                    return Type::Option(Box::new(Type::Basic("unknown".to_string())));
+                }
                 if let Some((_, ty)) = self.variables.get(name) {
+                    ty.clone()
+                } else if let Some(ty) = self.global_consts.get(name) {
                     ty.clone()
                 } else {
                     Type::Basic("int".to_string())
@@ -49,10 +54,19 @@ impl LLVMGenerator {
                     if name == "ok" || name == "err" || name == "risky" {
                         return Type::Result(Box::new(Type::Basic("unknown".to_string())));
                     }
+                    if name == "some" || name == "none" {
+                        return Type::Option(Box::new(Type::Basic("unknown".to_string())));
+                    }
                     if let Some(ret_ty) = self.functions.get(name) {
                         return ret_ty.clone();
                     }
+                    if self.structs.contains_key(name) {
+                        return Type::Basic(name.clone());
+                    }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
+                    if method_name == "to_string" {
+                        return Type::Basic("string".to_string());
+                    }
                     let receiver_ty = self.infer_expr_type(receiver);
                     if let Type::Result(_) | Type::Option(_) = &receiver_ty {
                         if method_name == "is_err" || method_name == "is_ok" || method_name == "error" || method_name == "value" || method_name == "unwrap" || method_name == "is_some" || method_name == "is_none" {
@@ -96,6 +110,12 @@ impl LLVMGenerator {
                                 "split" => return Type::List(Box::new(Type::Basic("string".to_string()))),
                                 "to_int" => return Type::Option(Box::new(Type::Basic("int".to_string()))),
                                 "to_float" => return Type::Option(Box::new(Type::Basic("float".to_string()))),
+                                _ => {}
+                            }
+                        }
+                        Type::Basic(name) if name == "bool" => {
+                            match method_name.as_str() {
+                                "to_string" => return Type::Basic("string".to_string()),
                                 _ => {}
                             }
                         }

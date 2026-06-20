@@ -5,6 +5,14 @@ impl LLVMGenerator {
     pub(crate) fn gen_expr(&mut self, expr: &Expr) -> String {
         match expr {
             Expr::Ident(name) => {
+                if name == "none" {
+                    let r = self.next_reg();
+                    self.body.push_str(&format!(
+                        "    {} = call ptr @n0_make_none()\n",
+                        r
+                    ));
+                    return r;
+                }
                 if let Some((ptr, ty)) = self.variables.get(name).cloned() {
                     let r = self.next_reg();
                     let ty_str = self.llvm_type(&ty);
@@ -14,10 +22,12 @@ impl LLVMGenerator {
                     ));
                     r
                 } else {
+                    let ty = self.global_consts.get(name).cloned().unwrap_or(Type::Basic("int".to_string()));
+                    let ty_str = self.llvm_type(&ty);
                     let r = self.next_reg();
                     self.body.push_str(&format!(
-                        "    {} = load i64, ptr @n0_{}, align 8\n",
-                        r, name
+                        "    {} = load {}, ptr @n0_{}, align 8\n",
+                        r, ty_str, name
                     ));
                     r
                 }
@@ -349,6 +359,20 @@ impl LLVMGenerator {
             }
             Expr::CallExpr { callee, args } => {
                 if let Expr::Ident(name) = &**callee {
+                    if self.structs.contains_key(name) {
+                        let decl = self.structs.get(name).unwrap().clone();
+                        let size = 8 + decl.fields.len() as i64 * 8;
+                        let r = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = call ptr @n0_c_alloc(i64 {})\n",
+                            r, size
+                        ));
+                        self.body.push_str(&format!(
+                            "    call void @n0_c_store_int(ptr {}, i64 0, i64 0)\n",
+                            r
+                        ));
+                        return r;
+                    }
                     if name.as_str() == "show_err" || name.as_str() == "print_err" {
                         if let Some(first) = args.first() {
                             let arg_reg = self.gen_expr(first);
@@ -376,12 +400,28 @@ impl LLVMGenerator {
                     let (mapped_name, is_builtin) = match name.as_str() {
                         "show" | "print" => {
                             if let Some(first) = args.first() {
+                                let arg_reg = self.gen_expr(first);
                                 let arg_ty = self.infer_expr_type(first);
-                                match arg_ty {
-                                    Type::Basic(n) if n == "string" => ("n0_show_string", true),
-                                    Type::Basic(n) if n == "float" => ("n0_show_float", true),
-                                    _ => ("n0_show_int", true),
-                                }
+                                let arg_llvm_ty = self.llvm_type(&arg_ty);
+                                let fn_name = match arg_llvm_ty.as_str() {
+                                    "ptr" => "n0_show_string",
+                                    "double" => "n0_show_float",
+                                    _ => {
+                                        if let Type::Basic(n) = &arg_ty {
+                                            if n == "bool" {
+                                                "n0_show_bool"
+                                            } else if n == "unknown" {
+                                                "n0_show_string"
+                                            } else {
+                                                "n0_show_int"
+                                            }
+                                        } else {
+                                            "n0_show_int"
+                                        }
+                                    }
+                                };
+                                self.body.push_str(&format!("    call void @{}({} {})\n", fn_name, arg_llvm_ty, arg_reg));
+                                return "0".to_string();
                             } else {
                                 ("n0_show_int", true)
                             }
@@ -398,15 +438,27 @@ impl LLVMGenerator {
                     let llvm_name = if is_builtin { mapped_name.to_string() } else { format!("n0_{}", mapped_name) };
                     let mut arg_regs = Vec::new();
                     for arg in args {
-                        let arg_reg = self.gen_expr(arg);
+                        let mut arg_reg = self.gen_expr(arg);
                         let arg_ty = self.infer_expr_type(arg);
-                        let arg_llvm_ty = self.llvm_type(&arg_ty);
+                        let mut arg_llvm_ty = self.llvm_type(&arg_ty);
+                        if (llvm_name == "n0_make_some" || llvm_name == "n0_make_ok") && arg_llvm_ty == "ptr" {
+                            let cast_reg = self.next_reg();
+                            self.body.push_str(&format!("    {} = ptrtoint ptr {} to i64\n", cast_reg, arg_reg));
+                            arg_reg = cast_reg;
+                            arg_llvm_ty = "i64".to_string();
+                        } else if (llvm_name == "n0_make_some" || llvm_name == "n0_make_ok") && arg_llvm_ty == "double" {
+                            let cast_reg = self.next_reg();
+                            self.body.push_str(&format!("    {} = bitcast double {} to i64\n", cast_reg, arg_reg));
+                            arg_reg = cast_reg;
+                            arg_llvm_ty = "i64".to_string();
+                        }
                         arg_regs.push(format!("{} {}", arg_llvm_ty, arg_reg));
                     }
 
                     let mut ret_llvm_ty = "i64".to_string();
                     if is_builtin {
-                        if mapped_name == "n0_c_alloc" || mapped_name == "n0_c_load_string" || mapped_name == "n0_c_interpolate" || mapped_name == "n0_c_argv" {
+                        if mapped_name == "n0_c_alloc" || mapped_name == "n0_c_load_string" || mapped_name == "n0_c_interpolate" || mapped_name == "n0_c_argv"
+                           || mapped_name == "n0_make_some" || mapped_name == "n0_make_none" || mapped_name == "n0_make_ok" || mapped_name == "n0_make_err" {
                             ret_llvm_ty = "ptr".to_string();
                         } else if mapped_name.starts_with("n0_show") || mapped_name == "n0_c_store_int" || mapped_name == "n0_c_store_string" {
                             ret_llvm_ty = "void".to_string();
@@ -441,17 +493,29 @@ impl LLVMGenerator {
                     }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
                     if let Expr::Ident(mod_name) = &**receiver {
-                        if self.variables.get(mod_name).is_none() {
+                        if self.variables.get(mod_name).is_none() && self.global_consts.get(mod_name).is_none() {
                             if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" {
                                 if mod_name == "io" && method_name == "show" {
                                     let first = args.first().unwrap();
                                     let arg_reg = self.gen_expr(first);
                                     let arg_ty = self.infer_expr_type(first);
-                                    let (fn_name, arg_llvm_ty) = match arg_ty {
-                                        Type::Basic(n) if n == "string" => ("n0_show_string", "ptr"),
-                                        Type::Basic(n) if n == "float" => ("n0_show_float", "double"),
-                                        Type::Basic(n) if n == "bool" => ("n0_show_bool", "i64"),
-                                        _ => ("n0_show_int", "i64"),
+                                    let arg_llvm_ty = self.llvm_type(&arg_ty);
+                                    let fn_name = match arg_llvm_ty.as_str() {
+                                        "ptr" => "n0_show_string",
+                                        "double" => "n0_show_float",
+                                        _ => {
+                                            if let Type::Basic(n) = &arg_ty {
+                                                if n == "bool" {
+                                                    "n0_show_bool"
+                                                } else if n == "unknown" {
+                                                    "n0_show_string"
+                                                } else {
+                                                    "n0_show_int"
+                                                }
+                                            } else {
+                                                "n0_show_int"
+                                            }
+                                        }
                                     };
                                     self.body.push_str(&format!("    call void @{}({} {})\n", fn_name, arg_llvm_ty, arg_reg));
                                     return "0".to_string();
@@ -598,9 +662,12 @@ impl LLVMGenerator {
                     let receiver_reg = self.gen_expr(receiver);
                     let receiver_llvm_ty = self.llvm_type(&receiver_ty);
                     
-                    let mut mapped_fn_name = "".to_string();
+                    let mut mapped_fn_name = format!("n0_{}", method_name);
                     let mut ret_llvm_ty = "i64".to_string();
-                    let mut is_void = false;
+                    if let Some(ret_ty) = self.functions.get(method_name) {
+                        ret_llvm_ty = self.llvm_type(ret_ty);
+                    }
+                    let mut is_void = ret_llvm_ty == "void";
                     let mut cast_args = Vec::new();
                     cast_args.push(format!("{} {}", receiver_llvm_ty, receiver_reg));
 
@@ -642,7 +709,29 @@ impl LLVMGenerator {
                                 _ => {}
                             }
                         }
+                        Type::Basic(name) if name == "bool" => {
+                            match method_name.as_str() {
+                                "to_string" => {
+                                    mapped_fn_name = "n0_bool_to_string".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                _ => {}
+                            }
+                        }
                         Type::Basic(name) if name == "int" => {
+                            match method_name.as_str() {
+                                "to_string" => {
+                                    mapped_fn_name = "n0_int_to_string".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "to_float" => {
+                                    mapped_fn_name = "n0_int_to_float".to_string();
+                                    ret_llvm_ty = "double".to_string();
+                                }
+                                _ => {}
+                            }
+                        }
+                        Type::Basic(name) if name == "unknown" => {
                             match method_name.as_str() {
                                 "to_string" => {
                                     mapped_fn_name = "n0_int_to_string".to_string();

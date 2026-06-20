@@ -113,12 +113,22 @@ char* n0_float_to_string(double f) {
         fpart -= digit;
     }
     buf[idx] = '\0';
-    char* res = malloc(idx + 1);
+    int len = idx;
+    while (len > 0 && buf[len - 1] == '0') {
+        len--;
+    }
+    if (len > 0 && buf[len - 1] == '.') {
+        buf[len++] = '0';
+        buf[len] = '\0';
+    } else {
+        buf[len] = '\0';
+    }
+    char* res = malloc(len + 1);
     if (res) strcpy(res, buf);
     return res;
 }
 
-char* n0_bool_to_string(int b) {
+char* n0_bool_to_string(int64_t b) {
     const char* s = b ? "true" : "false";
     char* res = malloc(strlen(s) + 1);
     if (res) strcpy(res, s);

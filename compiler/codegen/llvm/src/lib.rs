@@ -23,6 +23,8 @@ pub struct LLVMGenerator {
     pub(crate) structs: HashMap<String, TypeDecl>,
     pub(crate) current_ret_type: String,
     pub(crate) functions: HashMap<String, Type>,
+    pub(crate) global_consts: HashMap<String, Type>,
+    pub(crate) loop_stack: Vec<(String, String)>, // (continue_lbl, break_lbl)
     pub(crate) compiled_files: std::collections::HashSet<std::path::PathBuf>,
     pub(crate) current_file: Option<std::path::PathBuf>,
 }
@@ -40,13 +42,15 @@ impl LLVMGenerator {
             structs: HashMap::new(),
             current_ret_type: "void".to_string(),
             functions: HashMap::new(),
+            global_consts: HashMap::new(),
+            loop_stack: Vec::new(),
             compiled_files: std::collections::HashSet::new(),
             current_file: None,
         }
     }
 
     pub fn generate(&mut self, ast: &Program) -> String {
-        // Collect structs and function return types
+        // Collect structs, function return types, and global constants
         for decl in &ast.decls {
             match decl {
                 ast::TopLevelDecl::TypeDecl(t) => {
@@ -54,6 +58,10 @@ impl LLVMGenerator {
                 }
                 ast::TopLevelDecl::FnDecl(f) => {
                     self.functions.insert(f.name.clone(), f.return_type.clone().unwrap_or(Type::Basic("void".to_string())));
+                }
+                ast::TopLevelDecl::ConstDecl(c) => {
+                    let val_ty = self.infer_expr_type(&c.value);
+                    self.global_consts.insert(c.name.clone(), val_ty);
                 }
                 _ => {}
             }
@@ -71,12 +79,16 @@ impl LLVMGenerator {
         self.globals.push_str("declare ptr @n0_c_interpolate(ptr, ptr)\n");
         self.globals.push_str("declare ptr @n0_int_to_string(i64)\n");
         self.globals.push_str("declare ptr @n0_float_to_string(double)\n");
-        self.globals.push_str("declare ptr @n0_bool_to_string(i32)\n");
+        self.globals.push_str("declare ptr @n0_bool_to_string(i64)\n");
         self.globals.push_str("declare void @n0_show_bool(i64)\n");
         self.globals.push_str("declare ptr @n0_string_concat(ptr, i32)\n");
         self.globals.push_str("declare i64 @n0_c_argc()\n");
         self.globals.push_str("declare ptr @n0_c_argv(i64)\n");
         self.globals.push_str("declare double @pow(double, double)\n");
+        self.globals.push_str("declare ptr @n0_make_some(i64)\n");
+        self.globals.push_str("declare ptr @n0_make_none()\n");
+        self.globals.push_str("declare ptr @n0_make_ok(i64)\n");
+        self.globals.push_str("declare ptr @n0_make_err(ptr)\n");
         
         // stdlib C runtime declarations
         self.globals.push_str("declare void @n0_show_err(ptr)\n");
@@ -130,7 +142,8 @@ impl LLVMGenerator {
 
         // Numeric conversion primitive methods
         self.globals.push_str("declare double @n0_int_to_float(i64)\n");
-        self.globals.push_str("declare i64 @n0_float_to_int(double)\n\n");
+        self.globals.push_str("declare i64 @n0_float_to_int(double)\n");
+        self.globals.push_str("declare i32 @strcmp(ptr, ptr)\n\n");
 
         self.globals.push_str("@global_argc = external global i32\n");
         self.globals.push_str("@global_argv = external global ptr\n\n");

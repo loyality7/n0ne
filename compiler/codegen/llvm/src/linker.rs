@@ -108,13 +108,18 @@ pub fn compile_llvm(ast: &Program, out_path: &Path, debug: bool) -> std::io::Res
 
     let opt_flag = if debug { "-O0" } else { "-O2" };
 
-    let output = Command::new(&clang_path)
-        .arg(&ll_path)
+    let mut cmd = Command::new(&clang_path);
+    cmd.arg(&ll_path)
         .arg(&runtime_c_path)
         .arg("-o")
         .arg(out_path)
-        .arg(opt_flag)
-        .output()?;
+        .arg(opt_flag);
+
+    if cfg!(target_os = "windows") {
+        cmd.arg("-target").arg("x86_64-pc-windows-msvc");
+    }
+
+    let output = cmd.output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

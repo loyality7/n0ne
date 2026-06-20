@@ -13,6 +13,18 @@ pub(crate) fn block_has_return(block: &Block) -> bool {
     })
 }
 
+pub(crate) fn block_has_terminator(block: &Block) -> bool {
+    block.stmts.iter().any(|stmt| match stmt {
+        Stmt::Return(_) | Stmt::Break | Stmt::Continue => true,
+        Stmt::If { then_branch, elifs, else_branch, .. } => {
+            block_has_terminator(then_branch)
+                && elifs.iter().all(|(_, b)| block_has_terminator(b))
+                && else_branch.as_ref().map_or(false, |b| block_has_terminator(b))
+        }
+        _ => false,
+    })
+}
+
 impl LLVMGenerator {
     pub(crate) fn next_reg(&mut self) -> String {
         self.reg_counter += 1;
@@ -116,7 +128,7 @@ impl LLVMGenerator {
                             let old_file = self.current_file.clone();
                             self.current_file = Some(resolved_path);
 
-                            // Collect structs and function return types
+                            // Collect structs, function return types, and global constants
                             for sub_decl in &sub_prog.decls {
                                 match sub_decl {
                                     ast::TopLevelDecl::TypeDecl(t) => {
@@ -124,6 +136,10 @@ impl LLVMGenerator {
                                     }
                                     ast::TopLevelDecl::FnDecl(f) => {
                                         self.functions.insert(f.name.clone(), f.return_type.clone().unwrap_or(Type::Basic("void".to_string())));
+                                    }
+                                    ast::TopLevelDecl::ConstDecl(c) => {
+                                        let val_ty = self.infer_expr_type(&c.value);
+                                        self.global_consts.insert(c.name.clone(), val_ty);
                                     }
                                     _ => {}
                                 }
@@ -171,6 +187,9 @@ impl LLVMGenerator {
         self.current_ret_type = ret_ty.clone();
 
         let mut params_str = Vec::new();
+        if let Some(rec) = &f.receiver {
+            params_str.push(format!("{} %{}", self.llvm_type(&Type::Basic(rec.type_name.clone())), rec.name));
+        }
         for param in &f.params {
             params_str.push(format!("{} %{}", self.llvm_type(&param.type_ann), param.name));
         }
@@ -192,6 +211,22 @@ impl LLVMGenerator {
         }
 
         if f.name != "main" {
+            if let Some(rec) = &f.receiver {
+                let ty = Type::Basic(rec.type_name.clone());
+                let ty_str = self.llvm_type(&ty);
+                self.body.push_str(&format!(
+                    "    %_{} = alloca {}, align 8\n",
+                    rec.name, ty_str
+                ));
+                self.body.push_str(&format!(
+                    "    store {} %{}, ptr %_{}, align 8\n",
+                    ty_str, rec.name, rec.name
+                ));
+                self.variables.insert(
+                    rec.name.clone(),
+                    (format!("%_{}", rec.name), ty),
+                );
+            }
             for param in &f.params {
                 let ty_str = self.llvm_type(&param.type_ann);
                 self.body.push_str(&format!(
@@ -265,8 +300,19 @@ impl LLVMGenerator {
         let val_llvm_ty = self.llvm_type(&val_ty);
         let init_val = match &c.value {
             Expr::Literal(Literal::Int(i)) => i.to_string(),
-            Expr::Literal(Literal::Float(f)) => f.to_string(),
+            Expr::Literal(Literal::Float(f)) => {
+                let mut s = f.to_string();
+                if !s.contains('.') {
+                    s.push_str(".0");
+                }
+                s
+            }
             Expr::Literal(Literal::Bool(b)) => if *b { "1".to_string() } else { "0".to_string() },
+            Expr::Literal(Literal::String(s)) => {
+                let name = self.add_string_constant(s);
+                let len = self.string_constants.last().unwrap().2;
+                format!("getelementptr inbounds ([{} x i8], ptr {}, i64 0, i64 0)", len, name)
+            }
             _ => "0".to_string(),
         };
         self.globals.push_str(&format!(

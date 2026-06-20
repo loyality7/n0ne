@@ -1,6 +1,6 @@
-use ast::{Stmt, Expr, Type, AssignOp};
+use ast::{Stmt, Expr, Type, AssignOp, MatchArm, Literal};
 use crate::LLVMGenerator;
-use crate::emitter::block_has_return;
+use crate::emitter::block_has_terminator;
 
 impl LLVMGenerator {
     pub(crate) fn gen_stmt(&mut self, stmt: &Stmt) {
@@ -127,7 +127,7 @@ impl LLVMGenerator {
                 ));
 
                 self.gen_block(then_branch);
-                if !block_has_return(then_branch) {
+                if !block_has_terminator(then_branch) {
                     self.body.push_str(&format!("    br label %{}\n", cont_lbl));
                 }
 
@@ -160,7 +160,7 @@ impl LLVMGenerator {
                     ));
 
                     self.gen_block(e_block);
-                    if !block_has_return(e_block) {
+                    if !block_has_terminator(e_block) {
                         self.body.push_str(&format!("    br label %{}\n", cont_lbl));
                     }
                 }
@@ -168,7 +168,7 @@ impl LLVMGenerator {
                 if let Some(eb) = else_branch {
                     self.body.push_str(&format!("\n{}:\n", current_else_lbl));
                     self.gen_block(eb);
-                    if !block_has_return(eb) {
+                    if !block_has_terminator(eb) {
                         self.body.push_str(&format!("    br label %{}\n", cont_lbl));
                     }
                 } else if !elifs.is_empty() {
@@ -209,6 +209,7 @@ impl LLVMGenerator {
 
                 let cond_lbl = self.next_label("loop_cond");
                 let body_lbl = self.next_label("loop_body");
+                let step_lbl = self.next_label("loop_step");
                 let end_lbl = self.next_label("loop_end");
 
                 self.body.push_str(&format!("    br label %{}\n\n{}:\n", cond_lbl, cond_lbl));
@@ -268,8 +269,15 @@ impl LLVMGenerator {
                     ));
                 }
 
+                self.loop_stack.push((step_lbl.clone(), end_lbl.clone()));
                 self.gen_block(body);
+                self.loop_stack.pop();
 
+                if !block_has_terminator(body) {
+                    self.body.push_str(&format!("    br label %{}\n", step_lbl));
+                }
+
+                self.body.push_str(&format!("\n{}:\n", step_lbl));
                 let next_i = self.next_reg();
                 self.body.push_str(&format!(
                     "    {} = add i64 {}, 1\n",
@@ -281,14 +289,156 @@ impl LLVMGenerator {
                 ));
                 self.body.push_str(&format!("    br label %{}\n\n{}:\n", cond_lbl, end_lbl));
             }
+            Stmt::While { cond, body } => {
+                let cond_lbl = self.next_label("while_cond");
+                self.body.push_str(&format!("    br label %{}\n\n{}:\n", cond_lbl, cond_lbl));
+
+                let cond_reg = self.gen_expr(cond);
+                let cond_ty = self.infer_expr_type(cond);
+                let cond_llvm_ty = self.llvm_type(&cond_ty);
+                let cmp_reg = self.next_reg();
+
+                if cond_llvm_ty == "ptr" {
+                    self.body.push_str(&format!(
+                        "    {} = icmp ne ptr {}, null\n",
+                        cmp_reg, cond_reg
+                    ));
+                } else {
+                    self.body.push_str(&format!(
+                        "    {} = icmp ne i64 {}, 0\n",
+                        cmp_reg, cond_reg
+                    ));
+                }
+
+                let body_lbl = self.next_label("while_body");
+                let end_lbl = self.next_label("while_end");
+
+                self.body.push_str(&format!(
+                    "    br i1 {}, label %{}, label %{}\n\n{}:\n",
+                    cmp_reg, body_lbl, end_lbl, body_lbl
+                ));
+
+                self.loop_stack.push((cond_lbl.clone(), end_lbl.clone()));
+                self.gen_block(body);
+                self.loop_stack.pop();
+
+                if !block_has_terminator(body) {
+                    self.body.push_str(&format!("    br label %{}\n", cond_lbl));
+                }
+
+                self.body.push_str(&format!("\n{}:\n", end_lbl));
+            }
+            Stmt::Break => {
+                if let Some((_, break_lbl)) = self.loop_stack.last().cloned() {
+                    self.body.push_str(&format!("    br label %{}\n", break_lbl));
+                }
+            }
+            Stmt::Continue => {
+                if let Some((cont_lbl, _)) = self.loop_stack.last().cloned() {
+                    self.body.push_str(&format!("    br label %{}\n", cont_lbl));
+                }
+            }
+            Stmt::Match { expr, cases } => {
+                let val_reg = self.gen_expr(expr);
+
+                let exit_lbl = self.next_label("match_exit");
+                let mut current_cmp_lbl = self.next_label("match_case");
+                
+                let first_cmp_lbl = current_cmp_lbl.clone();
+                self.body.push_str(&format!("    br label %{}\n", first_cmp_lbl));
+
+                for (i, (arm, body)) in cases.iter().enumerate() {
+                    let next_cmp_lbl = if i + 1 < cases.len() {
+                        self.next_label("match_case")
+                    } else {
+                        exit_lbl.clone()
+                    };
+
+                    self.body.push_str(&format!("\n{}:\n", current_cmp_lbl));
+
+                    match arm {
+                        MatchArm::Literal(lit) => {
+                            let cmp_reg = self.next_reg();
+                            match lit {
+                                Literal::Int(val) => {
+                                    self.body.push_str(&format!(
+                                        "    {} = icmp eq i64 {}, {}\n",
+                                        cmp_reg, val_reg, val
+                                    ));
+                                }
+                                Literal::Float(val) => {
+                                    self.body.push_str(&format!(
+                                        "    {} = fcmp oeq double {}, {}\n",
+                                        cmp_reg, val_reg, val
+                                    ));
+                                }
+                                Literal::Bool(val) => {
+                                    let b_val = if *val { 1 } else { 0 };
+                                    self.body.push_str(&format!(
+                                        "    {} = icmp eq i64 {}, {}\n",
+                                        cmp_reg, val_reg, b_val
+                                    ));
+                                }
+                                Literal::String(val) => {
+                                    let str_const_name = self.add_string_constant(val);
+                                    let len = self.string_constants.last().unwrap().2;
+                                    let lit_ptr = self.next_reg();
+                                    self.body.push_str(&format!(
+                                        "    {} = getelementptr inbounds [{} x i8], ptr {}, i64 0, i64 0\n",
+                                        lit_ptr, len, str_const_name
+                                    ));
+                                    let strcmp_res = self.next_reg();
+                                    self.body.push_str(&format!(
+                                        "    {} = call i32 @strcmp(ptr {}, ptr {})\n",
+                                        strcmp_res, val_reg, lit_ptr
+                                    ));
+                                    self.body.push_str(&format!(
+                                        "    {} = icmp eq i32 {}, 0\n",
+                                        cmp_reg, strcmp_res
+                                    ));
+                                }
+                            }
+                            let case_body_lbl = self.next_label("match_body");
+                            self.body.push_str(&format!(
+                                "    br i1 {}, label %{}, label %{}\n\n{}:\n",
+                                cmp_reg, case_body_lbl, next_cmp_lbl, case_body_lbl
+                            ));
+                            self.gen_block(body);
+                            if !block_has_terminator(body) {
+                                self.body.push_str(&format!("    br label %{}\n", exit_lbl));
+                            }
+                        }
+                        MatchArm::Wildcard => {
+                            self.gen_block(body);
+                            if !block_has_terminator(body) {
+                                self.body.push_str(&format!("    br label %{}\n", exit_lbl));
+                            }
+                        }
+                    }
+
+                    current_cmp_lbl = next_cmp_lbl;
+                }
+
+                self.body.push_str(&format!("\n{}:\n", exit_lbl));
+            }
             Stmt::Return(opt_val) => {
                 if let Some(v) = opt_val {
                     let val_reg = self.gen_expr(v);
                     let val_ty = self.infer_expr_type(v);
-                    let val_llvm_ty = self.llvm_type(&val_ty);
+                    let mut val_llvm_ty = self.llvm_type(&val_ty);
+                    let mut final_reg = val_reg;
+                    if self.current_ret_type == "i32" && val_llvm_ty == "i64" {
+                        let cast_reg = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = trunc i64 {} to i32\n",
+                            cast_reg, final_reg
+                        ));
+                        final_reg = cast_reg;
+                        val_llvm_ty = "i32".to_string();
+                    }
                     self.body.push_str(&format!(
                         "    ret {} {}\n",
-                        val_llvm_ty, val_reg
+                        val_llvm_ty, final_reg
                     ));
                 } else {
                     if self.current_ret_type == "void" {
