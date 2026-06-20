@@ -14,9 +14,8 @@ Python feels good but runs slow and needs a runtime.
 Go is efficient but verbose in places.
 Rust is powerful but complex to learn.
 
-n0ne sits in the middle.
+n0ne sits in the middle. Readable as Python. Compiled as Go. No complexity tax.
 
-Reads like Python. Runs like Go. Builds like neither.
 ---
 
 ## Install
