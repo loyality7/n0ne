@@ -205,15 +205,50 @@ impl Parser {
         let mut path = String::new();
         let tok_line = self.peek().line;
         let tok_col = self.peek().column;
-        while !self.check(TokenKind::Newline) && !self.is_at_end() {
+        while !self.check(TokenKind::Newline) && !self.check(TokenKind::LBrace) && !self.is_at_end() {
             let tok = self.advance();
             path.push_str(&Self::token_to_string(&tok.kind));
         }
         if path.is_empty() {
             panic!("Parser error: Expected path after 'use' at {}:{}", tok_line, tok_col);
         }
+        
+        let kind = if path.starts_with("./") || path.starts_with("../") {
+            UseKind::Local
+        } else if path.contains('/') {
+            UseKind::Package
+        } else {
+            UseKind::Stdlib
+        };
+
+        let mut items = None;
+        if self.check(TokenKind::LBrace) {
+            self.consume(TokenKind::LBrace);
+            let mut list = Vec::new();
+            while !self.check(TokenKind::RBrace) && !self.is_at_end() {
+                if self.check(TokenKind::Newline) {
+                    self.advance();
+                    continue;
+                }
+                let tok = self.advance();
+                let name = match &tok.kind {
+                    TokenKind::Ident(name) => name.clone(),
+                    other => panic!(
+                        "Parser error: Expected identifier in import items list, found '{}' at {}:{}",
+                        other, tok.line, tok.column
+                    ),
+                };
+                list.push(name);
+                if self.check(TokenKind::Comma) {
+                    self.advance();
+                }
+            }
+            self.consume(TokenKind::RBrace);
+            items = Some(list);
+        }
+
         self.consume(TokenKind::Newline);
-        UseDecl { path }
+        UseDecl { path, kind, items }
     }
 
     pub(crate) fn token_to_string(kind: &TokenKind) -> String {

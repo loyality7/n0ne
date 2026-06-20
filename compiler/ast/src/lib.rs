@@ -55,8 +55,17 @@ pub struct TaskDecl {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum UseKind {
+    Stdlib,
+    Local,
+    Package,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct UseDecl {
     pub path: String,
+    pub kind: UseKind,
+    pub items: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

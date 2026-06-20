@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_parse_use() {
-        let input = "use http\nuse ./mymodule\nuse pkg/name\n";
+        let input = "use http\nuse ./mymodule\nuse pkg/name\nuse io { show, read }\n";
         let tokens = Lexer::tokenize(input);
         let mut parser = Parser::new(tokens);
         let program = parser.parse();
@@ -243,13 +243,24 @@ mod tests {
             program.decls,
             vec![
                 TopLevelDecl::UseDecl(UseDecl {
-                    path: "http".to_string()
+                    path: "http".to_string(),
+                    kind: UseKind::Stdlib,
+                    items: None
                 }),
                 TopLevelDecl::UseDecl(UseDecl {
-                    path: "./mymodule".to_string()
+                    path: "./mymodule".to_string(),
+                    kind: UseKind::Local,
+                    items: None
                 }),
                 TopLevelDecl::UseDecl(UseDecl {
-                    path: "pkg/name".to_string()
+                    path: "pkg/name".to_string(),
+                    kind: UseKind::Package,
+                    items: None
+                }),
+                TopLevelDecl::UseDecl(UseDecl {
+                    path: "io".to_string(),
+                    kind: UseKind::Stdlib,
+                    items: Some(vec!["show".to_string(), "read".to_string()])
                 }),
             ]
         );
