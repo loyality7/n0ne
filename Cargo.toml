@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "compiler/lexer",
+    "compiler/ast",
+    "compiler/parser",
+    "compiler/sema",
+    "compiler/codegen/llvm",
+    "compiler/cli",
+    "tools/formatter",
+]
+resolver = "2"

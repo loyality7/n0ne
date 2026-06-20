@@ -1,0 +1,8 @@
+target/
+build/
+dist/
+.cache/
+*.exe
+*.dll
+*.log
+plan.txt
