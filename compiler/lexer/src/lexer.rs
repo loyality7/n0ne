@@ -457,6 +457,10 @@ impl Lexer {
                         "not" => TokenKind::Not,
                         "try" => TokenKind::Try,
                         "spawn" => TokenKind::Spawn,
+                        "while" | "n0while" => TokenKind::While,
+                        "break" => TokenKind::Break,
+                        "continue" => TokenKind::Continue,
+                        "match" | "n0match" => TokenKind::Match,
                         _ => TokenKind::Ident(ident_str),
                     };
 
@@ -510,9 +514,61 @@ impl Lexer {
                         });
                     }
                 } else if c == '"' {
-                    cursor.bump(); // consume starting '"'
-                    let mut s = String::new();
-                    let mut terminated = false;
+                    let is_triple = cursor.peek() == Some('"') && cursor.peek_next() == Some('"') && cursor.peek_third() == Some('"');
+                    if is_triple {
+                        cursor.bump(); // consume first '"'
+                        cursor.bump(); // consume second '"'
+                        cursor.bump(); // consume third '"'
+                        let mut s = String::new();
+                        let mut terminated = false;
+                        while let Some(cc) = cursor.peek() {
+                            if cc == '"' && cursor.peek_next() == Some('"') && cursor.peek_third() == Some('"') {
+                                cursor.bump(); // consume first '"'
+                                cursor.bump(); // consume second '"'
+                                cursor.bump(); // consume third '"'
+                                terminated = true;
+                                break;
+                            } else if cc == '\\' {
+                                cursor.bump(); // consume '\'
+                                if let Some(esc) = cursor.bump() {
+                                    match esc {
+                                        'n' => s.push('\n'),
+                                        'r' => s.push('\r'),
+                                        't' => s.push('\t'),
+                                        '\\' => s.push('\\'),
+                                        '"' => s.push('"'),
+                                        _ => s.push(esc),
+                                    }
+                                } else {
+                                    panic!("Lexical error: Unterminated escape sequence in triple-quoted string");
+                                }
+                            } else {
+                                s.push(cursor.bump().unwrap());
+                            }
+                        }
+                        if !terminated {
+                            panic!("Lexical error: Unterminated triple-quoted string starting at line {}, column {}", tok_line, tok_col);
+                        }
+                        let mut s_refined = s;
+                        if s_refined.starts_with("\r\n") {
+                            s_refined = s_refined.strip_prefix("\r\n").unwrap().to_string();
+                        } else if s_refined.starts_with('\n') {
+                            s_refined = s_refined.strip_prefix('\n').unwrap().to_string();
+                        }
+                        if s_refined.ends_with("\r\n") {
+                            s_refined = s_refined.strip_suffix("\r\n").unwrap().to_string();
+                        } else if s_refined.ends_with('\n') {
+                            s_refined = s_refined.strip_suffix('\n').unwrap().to_string();
+                        }
+                        tokens.push(Token {
+                            kind: TokenKind::String(s_refined),
+                            line: tok_line,
+                            column: tok_col,
+                        });
+                    } else {
+                        cursor.bump(); // consume starting '"'
+                        let mut s = String::new();
+                        let mut terminated = false;
 
                     while let Some(cc) = cursor.peek() {
                         if cc == '"' {
@@ -553,6 +609,7 @@ impl Lexer {
                         line: tok_line,
                         column: tok_col,
                     });
+                    }
                 } else {
                     // Operators and Delimiters
                     let kind = match cursor.bump().unwrap() {

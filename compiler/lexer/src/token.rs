@@ -35,6 +35,10 @@ pub enum TokenKind {
     Not,
     Try,
     Spawn,
+    While,
+    Break,
+    Continue,
+    Match,
 
     // Operators
     Plus,       // +
@@ -106,6 +110,10 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Not => write!(f, "not"),
             TokenKind::Try => write!(f, "try"),
             TokenKind::Spawn => write!(f, "spawn"),
+            TokenKind::While => write!(f, "while"),
+            TokenKind::Break => write!(f, "break"),
+            TokenKind::Continue => write!(f, "continue"),
+            TokenKind::Match => write!(f, "match"),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Star => write!(f, "*"),

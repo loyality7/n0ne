@@ -23,6 +23,13 @@ impl<'a> Cursor<'a> {
         cl.next()
     }
 
+    pub(crate) fn peek_third(&self) -> Option<char> {
+        let mut cl = self.chars.clone();
+        cl.next();
+        cl.next();
+        cl.next()
+    }
+
     pub(crate) fn bump(&mut self) -> Option<char> {
         if let Some(c) = self.chars.next() {
             if c == '\t' {
