@@ -1,5 +1,6 @@
 # n0ne
 
+```text
 ================================================================
 n0ne — Less syntax. More meaning.
 ================================================================
@@ -32,3 +33,4 @@ Continuous Delivery:
   - Automates release builds on version tag push (v*).
   - Packages pre-compiled binaries into tar.gz and zip files.
   - Automatically published to GitHub Releases.
+```
