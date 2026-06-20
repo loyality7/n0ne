@@ -15,8 +15,9 @@ jobs:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -29,11 +30,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang llvm
 
-      - name: Run Tests
+      - name: Install LLVM/Clang (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install llvm -y
+
+      - name: Run Unit Tests
         run: cargo test --verbose
 
   release:
-    name: Build & Release Binaries
+    name: Build Release — ${{ matrix.artifact_name }}
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
@@ -42,16 +47,12 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: n0ne-linux
-            asset_suffix: .tar.gz
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: n0ne-macos
-            asset_suffix: .tar.gz
+            artifact_name: n0ne-linux-x86_64
+            binary_name: n0ne
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: n0ne-windows
-            asset_suffix: .zip
+            artifact_name: n0ne-windows-x86_64
+            binary_name: n0ne.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -60,33 +61,45 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install LLVM/Clang (Ubuntu)
+      - name: Install LLVM/Clang for bundling (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm
 
+      - name: Install LLVM/Clang for bundling (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install llvm -y
+
       - name: Build Release Binary
         run: cargo build --release --target ${{ matrix.target }} --bin n0ne
 
-      - name: Package Binary (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Package (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          cd target/${{ matrix.target }}/release
-          tar -czf ../../../${{ matrix.artifact_name }}${{ matrix.asset_suffix }} n0ne
-          cd -
+          mkdir -p dist/n0ne
+          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} dist/n0ne/
+          cp README.md dist/n0ne/
+          cp LICENSE dist/n0ne/
+          cp -r examples dist/n0ne/
+          cd dist && tar -czf ../${{ matrix.artifact_name }}.tar.gz n0ne
 
-      - name: Package Binary (Windows)
+      - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          Compress-Archive -Path target/${{ matrix.target }}/release/n0ne.exe -DestinationPath ${{ matrix.artifact_name }}${{ matrix.asset_suffix }}
+          New-Item -ItemType Directory -Force -Path dist\n0ne
+          Copy-Item target\${{ matrix.target }}\release\${{ matrix.binary_name }} dist\n0ne\
+          Copy-Item README.md dist\n0ne\
+          Copy-Item LICENSE dist\n0ne\
+          Copy-Item -Recurse examples dist\n0ne\
+          Compress-Archive -Path dist\n0ne -DestinationPath ${{ matrix.artifact_name }}.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}${{ matrix.asset_suffix }}
+          path: ${{ matrix.artifact_name }}.*
 
   create-release:
     name: Create GitHub Release
@@ -96,32 +109,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Linux Artifact
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: n0ne-linux
-          path: ./
-
-      - name: Download macOS Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: n0ne-macos
-          path: ./
-
-      - name: Download Windows Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: n0ne-windows
-          path: ./
+          path: artifacts
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
-            n0ne-linux.tar.gz
-            n0ne-macos.tar.gz
-            n0ne-windows.zip
+            artifacts/**/*
           draft: false
           prerelease: false
+          body: |
+            ## n0ne ${{ github.ref_name }}
+
+            ### Installation
+            **Linux / macOS**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | sh
+            ```
+
+            **Windows (PowerShell)**
+            ```powershell
+            irm https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.ps1 | iex
+            ```
+
+            ### Quick Start
+            ```
+            task main
+                print("hello world")
+
+            n0ne run hello.n0
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
