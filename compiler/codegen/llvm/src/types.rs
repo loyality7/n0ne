@@ -1,0 +1,163 @@
+use ast::{Type, Expr, Literal};
+use crate::LLVMGenerator;
+
+impl LLVMGenerator {
+    pub(crate) fn llvm_type(&self, ty: &Type) -> String {
+        match ty {
+            Type::Basic(name) => match name.as_str() {
+                "int" => "i64".to_string(),
+                "bool" => "i64".to_string(),
+                "float" => "double".to_string(),
+                "string" => "ptr".to_string(),
+                _ => "ptr".to_string(),
+            },
+            _ => "ptr".to_string(),
+        }
+    }
+
+    pub(crate) fn infer_expr_type(&self, expr: &Expr) -> Type {
+        match expr {
+            Expr::Ident(name) => {
+                if let Some((_, ty)) = self.variables.get(name) {
+                    ty.clone()
+                } else {
+                    Type::Basic("int".to_string())
+                }
+            }
+            Expr::Literal(lit) => match lit {
+                Literal::Int(_) => Type::Basic("int".to_string()),
+                Literal::Float(_) => Type::Basic("float".to_string()),
+                Literal::String(_) => Type::Basic("string".to_string()),
+                Literal::Bool(_) => Type::Basic("bool".to_string()),
+            },
+            Expr::CallExpr { callee, .. } => {
+                if let Expr::Ident(name) = &**callee {
+                    if name.starts_with("make_") {
+                        let type_name = &name[5..];
+                        let mut chars = type_name.chars();
+                        if let Some(first) = chars.next() {
+                            let capitalized = first.to_uppercase().collect::<String>() + chars.as_str();
+                            return Type::Basic(capitalized);
+                        }
+                    }
+                    if name == "c_alloc" {
+                        return Type::Basic("unknown".to_string());
+                    }
+                    if name == "c_argv" || name == "c_interpolate" || name == "c_load_string" {
+                        return Type::Basic("string".to_string());
+                    }
+                    if name == "ok" || name == "err" || name == "risky" {
+                        return Type::Result(Box::new(Type::Basic("unknown".to_string())));
+                    }
+                } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
+                    let receiver_ty = self.infer_expr_type(receiver);
+                    match &receiver_ty {
+                        Type::Basic(name) if name == "string" => {
+                            match method_name.as_str() {
+                                "len" => return Type::Basic("int".to_string()),
+                                "contains" | "starts_with" | "ends_with" => return Type::Basic("bool".to_string()),
+                                "upper" | "lower" | "trim" | "replace" | "slice" => return Type::Basic("string".to_string()),
+                                "split" => return Type::List(Box::new(Type::Basic("string".to_string()))),
+                                "to_int" => return Type::Option(Box::new(Type::Basic("int".to_string()))),
+                                "to_float" => return Type::Option(Box::new(Type::Basic("float".to_string()))),
+                                _ => {}
+                            }
+                        }
+                        Type::Basic(name) if name == "int" => {
+                            match method_name.as_str() {
+                                "to_string" => return Type::Basic("string".to_string()),
+                                "to_float" => return Type::Basic("float".to_string()),
+                                _ => {}
+                            }
+                        }
+                        Type::Basic(name) if name == "float" => {
+                            match method_name.as_str() {
+                                "to_int" => return Type::Basic("int".to_string()),
+                                "to_string" => return Type::Basic("string".to_string()),
+                                _ => {}
+                            }
+                        }
+                        Type::List(inner) => {
+                            match method_name.as_str() {
+                                "len" => return Type::Basic("int".to_string()),
+                                "push" => return Type::Basic("void".to_string()),
+                                "pop" | "first" | "last" => return Type::Option(inner.clone()),
+                                "contains" => return Type::Basic("bool".to_string()),
+                                _ => {}
+                            }
+                        }
+                        Type::Map(_key_ty, val_ty) => {
+                            match method_name.as_str() {
+                                "get" => return Type::Option(val_ty.clone()),
+                                "set" | "delete" => return Type::Basic("void".to_string()),
+                                "has" => return Type::Basic("bool".to_string()),
+                                "keys" => return Type::List(Box::new(Type::Basic("string".to_string()))),
+                                "values" => return Type::List(val_ty.clone()),
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Type::Basic("int".to_string())
+            }
+            Expr::FieldAccess { expr: inner, field } => {
+                let inner_ty = self.infer_expr_type(inner);
+                let type_name = match &inner_ty {
+                    Type::Basic(n) => n.clone(),
+                    Type::Result(_) => "result".to_string(),
+                    Type::Option(_) => "option".to_string(),
+                    _ => "unknown".to_string(),
+                };
+                if type_name == "result" && field == "is_err" {
+                    Type::Basic("int".to_string())
+                } else if type_name == "result" && field == "error" {
+                    Type::Basic("string".to_string())
+                } else if type_name == "result" && field == "value" {
+                    match &inner_ty {
+                        Type::Result(t) => (**t).clone(),
+                        _ => Type::Basic("unknown".to_string()),
+                    }
+                } else if type_name == "option" && field == "is_some" {
+                    Type::Basic("bool".to_string())
+                } else if type_name == "option" && field == "is_none" {
+                    Type::Basic("bool".to_string())
+                } else if type_name == "option" && field == "value" {
+                    match &inner_ty {
+                        Type::Option(t) => (**t).clone(),
+                        _ => Type::Basic("unknown".to_string()),
+                    }
+                } else if let Some(decl) = self.structs.get(&type_name) {
+                    decl.fields.iter().find(|f| &f.name == field).map(|f| f.type_ann.clone()).unwrap_or(Type::Basic("unknown".to_string()))
+                } else {
+                    Type::Basic("unknown".to_string())
+                }
+            }
+            Expr::TryExpr(inner) => {
+                let inner_ty = self.infer_expr_type(inner);
+                match inner_ty {
+                    Type::Result(t) => *t,
+                    _ => Type::Basic("unknown".to_string()),
+                }
+            }
+            Expr::ListLiteral(items) => {
+                let elem_type = if items.is_empty() {
+                    Type::Basic("unknown".to_string())
+                } else {
+                    self.infer_expr_type(&items[0])
+                };
+                Type::List(Box::new(elem_type))
+            }
+            Expr::MapLiteral(pairs) => {
+                let (key_type, val_type) = if pairs.is_empty() {
+                    (Type::Basic("unknown".to_string()), Type::Basic("unknown".to_string()))
+                } else {
+                    (self.infer_expr_type(&pairs[0].0), self.infer_expr_type(&pairs[0].1))
+                };
+                Type::Map(Box::new(key_type), Box::new(val_type))
+            }
+            Expr::FStringExpr(_) => Type::Basic("string".to_string()),
+            _ => Type::Basic("int".to_string()),
+        }
+    }
+}
