@@ -137,10 +137,14 @@ jobs:
             ```
 
             ### Quick Start
+            1. Create a file named `hello.n0`:
             ```
             task main
                 print("hello world")
+            ```
 
+            2. Run it:
+            ```bash
             n0ne run hello.n0
             ```
         env:
