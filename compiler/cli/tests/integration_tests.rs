@@ -1,5 +1,5 @@
 mod integration;
-use integration::compile_and_run;
+use integration::{compile_and_run, compile_and_run_with_files};
 
 #[test]
 fn test_hello_world() {
@@ -446,4 +446,54 @@ task main
 123.000000
 4";
     assert_eq!(out.trim().replace("\r\n", "\n"), expected.trim());
+}
+
+#[test]
+fn test_import_local() {
+    let files = vec![
+        ("utils.n0", "fn greet(name: string) -> string\n    return \"Hello, \" + name\n"),
+        ("main.n0", "use ./utils\n\ntask main\n    show(utils.greet(\"Sarath\"))\n"),
+    ];
+    let (out, code) = compile_and_run_with_files(files);
+    assert_eq!(out.trim(), "Hello, Sarath");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn test_import_stdlib() {
+    let files = vec![
+        ("main.n0", "use io\nuse fs\n\ntask main\n    io.show(\"testing io\")\n    fs.write(\"test_file.txt\", \"hello fs\")\n    if fs.exists(\"test_file.txt\")\n        io.show(\"file exists\")\n    fs.delete(\"test_file.txt\")\n"),
+    ];
+    let (out, code) = compile_and_run_with_files(files);
+    assert_eq!(out.trim().replace("\r\n", "\n"), "testing io\nfile exists");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn test_circular_import_error() {
+    let files = vec![
+        ("a.n0", "use ./b\n"),
+        ("b.n0", "use ./a\n"),
+        ("main.n0", "use ./a\ntask main\n    show(1)\n"),
+    ];
+    let (out, _) = compile_and_run_with_files(files);
+    assert!(out.contains("E009") || out.contains("circular"));
+}
+
+#[test]
+fn test_missing_local_file_error() {
+    let files = vec![
+        ("main.n0", "use ./missing_file\ntask main\n    show(1)\n"),
+    ];
+    let (out, _) = compile_and_run_with_files(files);
+    assert!(out.contains("E011") || out.contains("not found") || out.contains("does not exist"));
+}
+
+#[test]
+fn test_unknown_stdlib_module_error() {
+    let files = vec![
+        ("main.n0", "use not_a_real_stdlib\ntask main\n    show(1)\n"),
+    ];
+    let (out, _) = compile_and_run_with_files(files);
+    assert!(out.contains("E010") || out.contains("unknown standard library module"));
 }
