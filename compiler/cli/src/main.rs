@@ -56,8 +56,47 @@ fn main() {
             exit(status.code().unwrap_or(1));
         }
         Commands::Fmt { file } => {
-            let source = fs::read_to_string(file).expect("failed to read file for formatting");
-            let formatted = formatter::format(&source);
+            let source = match fs::read_to_string(file) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error reading file {}: {}", file.display(), e);
+                    exit(1);
+                }
+            };
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                    Some(*s)
+                } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                    Some(s.as_str())
+                } else {
+                    None
+                };
+                if let Some(m) = msg {
+                    if m.starts_with("Lexical error") || m.starts_with("Parser error") {
+                        return;
+                    }
+                }
+                default_hook(info);
+            }));
+            let formatted_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                formatter::format(&source)
+            }));
+            let _ = std::panic::take_hook();
+            let formatted = match formatted_res {
+                Ok(f) => f,
+                Err(err) => {
+                    let msg = if let Some(s) = err.downcast_ref::<&str>() {
+                        *s
+                    } else if let Some(s) = err.downcast_ref::<String>() {
+                        s.as_str()
+                    } else {
+                        "Unknown error during formatting"
+                    };
+                    eprintln!("error: {}", msg);
+                    exit(1);
+                }
+            };
             fs::write(file, formatted).expect("failed to write formatted file");
             println!("formatted {}", file.display().to_string().replace("\\", "/"));
         }
@@ -82,12 +121,45 @@ fn build(file_path: &Path, debug: bool) -> PathBuf {
         }
     };
 
-    // 1. run lexer
-    let tokens = lexer::Lexer::tokenize(&source);
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            Some(*s)
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            Some(s.as_str())
+        } else {
+            None
+        };
+        if let Some(m) = msg {
+            if m.starts_with("Lexical error") || m.starts_with("Parser error") {
+                return;
+            }
+        }
+        default_hook(info);
+    }));
 
-    // 2. run parser
-    let mut parser = parser::Parser::new(tokens);
-    let ast = parser.parse();
+    let ast_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let tokens = lexer::Lexer::tokenize(&source);
+        let mut parser = parser::Parser::new(tokens);
+        parser.parse()
+    }));
+
+    let _ = std::panic::take_hook();
+
+    let ast = match ast_res {
+        Ok(ast) => ast,
+        Err(err) => {
+            let msg = if let Some(s) = err.downcast_ref::<&str>() {
+                *s
+            } else if let Some(s) = err.downcast_ref::<String>() {
+                s.as_str()
+            } else {
+                "Unknown compilation error"
+            };
+            eprintln!("error: {}", msg);
+            exit(1);
+        }
+    };
 
     // 3. run sema
     let mut checker = sema::TypeChecker::new();
