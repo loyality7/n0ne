@@ -39,6 +39,7 @@ pub enum TokenKind {
     Break,
     Continue,
     Match,
+    Enum,
 
     // Operators
     Plus,       // +
@@ -114,6 +115,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Break => write!(f, "break"),
             TokenKind::Continue => write!(f, "continue"),
             TokenKind::Match => write!(f, "match"),
+            TokenKind::Enum => write!(f, "enum"),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Star => write!(f, "*"),
