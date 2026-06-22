@@ -75,6 +75,7 @@ pub fn compile_llvm(ast: &Program, out_path: &Path, debug: bool, src_path: Optio
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     let mut generator = LLVMGenerator::new();
+    generator.debug = debug;
     if let Some(sp) = src_path {
         generator.current_file = Some(sp.to_path_buf());
     }

@@ -594,3 +594,63 @@ task main
     assert_eq!(res.stdout.replace("\r\n", "\n"), "missing\n");
 }
 
+#[test]
+fn test_integer_overflow_debug() {
+    let source = "
+task main
+    x = 9223372036854775807
+    y = x + 1
+    show(y.to_string())
+";
+    let res = crate::helpers::run_n0ne_debug(source);
+    assert_eq!(res.exit_code, 1);
+    let stderr = res.stderr.replace("\r\n", "\n");
+    assert!(stderr.contains("runtime error: integer overflow"));
+    assert!(stderr.contains(":4"), "expected stderr to contain line 4 location. Stderr:\n{}", stderr);
+}
+
+#[test]
+fn test_integer_overflow_release() {
+    let source = "
+task main
+    x = 9223372036854775807
+    y = x + 1
+    show(y.to_string())
+";
+    let res = crate::helpers::run_n0ne(source); // release mode wraps
+    assert_eq!(res.exit_code, 0);
+    assert_eq!(res.stdout.replace("\r\n", "\n"), "-9223372036854775808\n");
+}
+
+#[test]
+fn test_division_by_zero_div() {
+    let source = "
+task main
+    a = 10
+    b = 0
+    x = a / b
+    show(x.to_string())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 1);
+    let stderr = res.stderr.replace("\r\n", "\n");
+    assert!(stderr.contains("runtime error: division by zero"));
+    assert!(stderr.contains(":5"), "expected stderr to contain line 5 location. Stderr:\n{}", stderr);
+}
+
+#[test]
+fn test_division_by_zero_mod() {
+    let source = "
+task main
+    a = 10
+    b = 0
+    x = a % b
+    show(x.to_string())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 1);
+    let stderr = res.stderr.replace("\r\n", "\n");
+    assert!(stderr.contains("runtime error: division by zero"));
+    assert!(stderr.contains(":5"), "expected stderr to contain line 5 location. Stderr:\n{}", stderr);
+}
+

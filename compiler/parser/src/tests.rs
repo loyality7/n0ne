@@ -201,9 +201,12 @@ mod tests {
                                 right: Box::new(Expr::BinExpr {
                                     left: Box::new(Expr::Ident("c".to_string())),
                                     op: BinOp::Pow,
-                                    right: Box::new(Expr::Ident("d".to_string()))
-                                })
-                            })
+                                    right: Box::new(Expr::Ident("d".to_string())),
+                                    line: 2,
+                                }),
+                                line: 2,
+                            }),
+                            line: 2,
                         }
                     }]
                 }

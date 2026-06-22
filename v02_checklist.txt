@@ -87,16 +87,16 @@ BOUNDS CHECKING
 [x] tests: out of bounds caught, message correct
 
 INTEGER OVERFLOW
-[ ] debug mode: overflow = runtime panic with message
-[ ] release mode: overflow wraps (fast)
-[ ] tests: overflow caught in debug, wraps in release
+[x] debug mode: overflow = runtime panic with message
+[x] release mode: overflow wraps (fast)
+[x] tests: overflow caught in debug, wraps in release
 
 DIVISION BY ZERO
-[ ] integer divide by zero = runtime error
-[ ] readable message not crash:
+[x] integer divide by zero = runtime error
+[x] readable message not crash:
         runtime error: division by zero
         --> main.n0:line 5
-[ ] tests: caught correctly
+[x] tests: caught correctly
 
 UNUSED VARIABLE WARNING
 [ ] sema detects declared but never used variable

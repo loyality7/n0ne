@@ -1202,6 +1202,28 @@ void n0_bounds_check(void* list, int64_t index, const char* file_name, int64_t l
     }
 }
 
+void n0_overflow_check(int64_t overflow, const char* file_name, int64_t line) {
+    if (overflow) {
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+            "runtime error: integer overflow\n--> %s:%lld",
+            file_name, (long long)line);
+        n0_show_err(buf);
+        exit(1);
+    }
+}
+
+void n0_div_check(int64_t divisor, const char* file_name, int64_t line) {
+    if (divisor == 0) {
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+            "runtime error: division by zero\n--> %s:%lld",
+            file_name, (long long)line);
+        n0_show_err(buf);
+        exit(1);
+    }
+}
+
 char* n0_http_post(const char* url, const char* body) {
     return "{}";
 }

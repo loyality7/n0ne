@@ -30,6 +30,7 @@ pub struct LLVMGenerator {
     pub(crate) deferred_calls: Vec<ast::Expr>,
     pub(crate) compiled_files: std::collections::HashSet<std::path::PathBuf>,
     pub(crate) current_file: Option<std::path::PathBuf>,
+    pub(crate) debug: bool,
 }
 
 impl LLVMGenerator {
@@ -52,6 +53,7 @@ impl LLVMGenerator {
             deferred_calls: Vec::new(),
             compiled_files: std::collections::HashSet::new(),
             current_file: None,
+            debug: false,
         }
     }
 
@@ -138,6 +140,11 @@ impl LLVMGenerator {
 
         // List primitive methods
         self.globals.push_str("declare void @n0_bounds_check(ptr, i64, ptr, i64)\n");
+        self.globals.push_str("declare void @n0_overflow_check(i64, ptr, i64)\n");
+        self.globals.push_str("declare void @n0_div_check(i64, ptr, i64)\n");
+        self.globals.push_str("declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)\n");
+        self.globals.push_str("declare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64)\n");
+        self.globals.push_str("declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)\n");
         self.globals.push_str("declare i64 @n0_list_len(ptr)\n");
         self.globals.push_str("declare ptr @n0_list_map(ptr, ptr)
 ");

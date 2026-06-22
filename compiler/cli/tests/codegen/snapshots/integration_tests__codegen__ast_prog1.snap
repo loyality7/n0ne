@@ -41,6 +41,7 @@ Program {
                                     right: Ident(
                                         "b",
                                     ),
+                                    line: 2,
                                 },
                             ),
                         ),

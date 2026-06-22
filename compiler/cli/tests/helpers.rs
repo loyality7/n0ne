@@ -83,6 +83,49 @@ pub fn run_n0ne(source: &str) -> TestResult {
     TestResult { stdout, stderr, exit_code }
 }
 
+// Compile n0ne source string to binary in debug mode and run it
+pub fn run_n0ne_debug(source: &str) -> TestResult {
+    let source = wrap_source_if_needed(source);
+    let (temp_dir, src_path, name) = get_temp_paths("run_debug");
+    fs::write(&src_path, source).unwrap();
+
+    let cli_path = env!("CARGO_BIN_EXE_n0ne");
+    let build_output = Command::new(cli_path)
+        .arg("build")
+        .arg("--debug")
+        .arg(&src_path)
+        .current_dir(&temp_dir)
+        .output()
+        .unwrap();
+
+    if !build_output.status.success() {
+        let stderr = String::from_utf8_lossy(&build_output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&build_output.stdout).to_string();
+        let exit_code = build_output.status.code().unwrap_or(1);
+        let _ = fs::remove_dir_all(&temp_dir);
+        return TestResult { stdout, stderr, exit_code };
+    }
+
+    let exe_name = if cfg!(target_os = "windows") {
+        format!("{}.exe", name)
+    } else {
+        name
+    };
+    let exe_path = temp_dir.join("build").join(&exe_name);
+
+    let run_output = Command::new(&exe_path)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&run_output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&run_output.stderr).to_string();
+    let exit_code = run_output.status.code().unwrap_or(1);
+
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    TestResult { stdout, stderr, exit_code }
+}
+
 // Compile only, return error messages if any
 pub fn compile_n0ne(source: &str) -> Result<(), Vec<String>> {
     let source = wrap_source_if_needed(source);

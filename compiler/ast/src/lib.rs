@@ -185,6 +185,7 @@ pub enum Expr {
         left: Box<Expr>,
         op: BinOp,
         right: Box<Expr>,
+        line: usize,
     },
     UnaryExpr {
         op: UnaryOp,

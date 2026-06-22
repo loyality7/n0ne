@@ -31,6 +31,7 @@ Program {
                                         0,
                                     ),
                                 ),
+                                line: 3,
                             },
                             body: Block {
                                 stmts: [
@@ -45,6 +46,7 @@ Program {
                                                     2,
                                                 ),
                                             ),
+                                            line: 4,
                                         },
                                         then_branch: Block {
                                             stmts: [
@@ -69,6 +71,7 @@ Program {
                                                     1,
                                                 ),
                                             ),
+                                            line: 6,
                                         },
                                     },
                                 ],

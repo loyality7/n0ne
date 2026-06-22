@@ -267,7 +267,7 @@ impl LLVMGenerator {
                 };
                 Type::Map(Box::new(key_type), Box::new(val_type))
             }
-            Expr::BinExpr { left, op, right } => {
+            Expr::BinExpr { left, op, right, .. } => {
                 let l_ty = self.infer_expr_type(left);
                 let r_ty = self.infer_expr_type(right);
                 match op {

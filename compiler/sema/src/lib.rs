@@ -979,7 +979,7 @@ impl TypeChecker {
                 Literal::String(_) => Type::Basic("string".to_string()),
                 Literal::Bool(_) => Type::Basic("bool".to_string()),
             },
-            Expr::BinExpr { left, op, right } => {
+            Expr::BinExpr { left, op, right, .. } => {
                 let t1 = self.infer_expr(left);
                 let _t2 = self.infer_expr(right);
                 match op {

@@ -220,7 +220,7 @@ impl LLVMGenerator {
                 ));
                 map_ptr
             }
-            Expr::BinExpr { left, op, right } => {
+            Expr::BinExpr { left, op, right, line } => {
                 let l_reg = self.gen_expr(left);
                 let r_reg = self.gen_expr(right);
                 let l_ty = self.infer_expr_type(left);
@@ -270,22 +270,72 @@ impl LLVMGenerator {
                 } else {
                     match op {
                         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod | BinOp::And | BinOp::Or => {
-                            let r = self.next_reg();
-                            let op_instr = match op {
-                                BinOp::Add => "add",
-                                BinOp::Sub => "sub",
-                                BinOp::Mul => "mul",
-                                BinOp::Div => "sdiv",
-                                BinOp::Mod => "srem",
-                                BinOp::And => "and",
-                                BinOp::Or => "or",
-                                _ => "add",
-                            };
-                            self.body.push_str(&format!(
-                                "    {} = {} i64 {}, {}\n",
-                                r, op_instr, l_reg, r_reg
-                            ));
-                            r
+                            if self.debug && matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul) {
+                                let struct_reg = self.next_reg();
+                                let intrinsic = match op {
+                                    BinOp::Add => "llvm.sadd.with.overflow.i64",
+                                    BinOp::Sub => "llvm.ssub.with.overflow.i64",
+                                    BinOp::Mul => "llvm.smul.with.overflow.i64",
+                                    _ => unreachable!(),
+                                };
+                                self.body.push_str(&format!(
+                                    "    {} = call {{ i64, i1 }} @{}(i64 {}, i64 {})\n",
+                                    struct_reg, intrinsic, l_reg, r_reg
+                                ));
+                                let res_reg = self.next_reg();
+                                self.body.push_str(&format!(
+                                    "    {} = extractvalue {{ i64, i1 }} {}, 0\n",
+                                    res_reg, struct_reg
+                                ));
+                                let overflow_i1 = self.next_reg();
+                                self.body.push_str(&format!(
+                                    "    {} = extractvalue {{ i64, i1 }} {}, 1\n",
+                                    overflow_i1, struct_reg
+                                ));
+                                let overflow_i64 = self.next_reg();
+                                self.body.push_str(&format!(
+                                    "    {} = zext i1 {} to i64\n",
+                                    overflow_i64, overflow_i1
+                                ));
+                                let file_name_ptr = self.get_current_file_name_ptr();
+                                self.body.push_str(&format!(
+                                    "    call void @n0_overflow_check(i64 {}, ptr {}, i64 {})\n",
+                                    overflow_i64, file_name_ptr, line
+                                ));
+                                res_reg
+                            } else if matches!(op, BinOp::Div | BinOp::Mod) {
+                                let file_name_ptr = self.get_current_file_name_ptr();
+                                self.body.push_str(&format!(
+                                    "    call void @n0_div_check(i64 {}, ptr {}, i64 {})\n",
+                                    r_reg, file_name_ptr, line
+                                ));
+                                let r = self.next_reg();
+                                let op_instr = match op {
+                                    BinOp::Div => "sdiv",
+                                    BinOp::Mod => "srem",
+                                    _ => unreachable!(),
+                                };
+                                self.body.push_str(&format!(
+                                    "    {} = {} i64 {}, {}\n",
+                                    r, op_instr, l_reg, r_reg
+                                ));
+                                r
+                            } else {
+                                let r = self.next_reg();
+                                let op_instr = match op {
+                                    BinOp::Add => "add",
+                                    BinOp::Sub => "sub",
+                                    BinOp::Mul => "mul",
+                                    BinOp::And => "and",
+                                    BinOp::Or => "or",
+                                    _ => unreachable!(),
+                                };
+                                self.body.push_str(&format!(
+                                    "    {} = {} i64 {}, {}\n",
+                                    r, op_instr, l_reg, r_reg
+                                ));
+                                r
+                            }
                         }
                         BinOp::Pow => {
                             let d1 = self.next_reg();

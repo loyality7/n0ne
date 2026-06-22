@@ -393,7 +393,7 @@ impl Formatter {
                 }
                 self.out.push('\"');
             }
-            Expr::BinExpr { left, op, right } => {
+            Expr::BinExpr { left, op, right, .. } => {
                 self.format_expr(left);
                 let op_str = match op {
                     BinOp::Add => "+",

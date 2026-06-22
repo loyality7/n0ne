@@ -228,6 +228,7 @@ impl Parser {
                     left: Box::new(left),
                     op: BinOp::Pow,
                     right: Box::new(right),
+                    line: tok.line,
                 }
             }
             TokenKind::Pipe => {
@@ -270,6 +271,7 @@ impl Parser {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
+                    line: tok.line,
                 }
             }
         }
