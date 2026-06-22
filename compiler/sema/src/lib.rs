@@ -135,6 +135,9 @@ fn types_match(expected: &Type, actual: &Type) -> bool {
         (Type::Map(ek, ev), Type::Map(ak, av)) => types_match(ek, ak) && types_match(ev, av),
         (Type::Result(e), Type::Result(a)) => types_match(e, a),
         (Type::Option(e), Type::Option(a)) => types_match(e, a),
+        (Type::Tuple(e), Type::Tuple(a)) => {
+            e.len() == a.len() && e.iter().zip(a.iter()).all(|(et, at)| types_match(et, at))
+        }
         _ => false,
     }
 }
@@ -275,6 +278,23 @@ impl TypeChecker {
                         ret_type: Some(Type::Basic(t.name.clone())),
                     };
                     self.table.insert_global(t.name.clone(), info);
+                }
+                TopLevelDecl::EnumDecl(e) => {
+                    for var in &e.variants {
+                        let info = SymbolInfo::Function {
+                            params: var.fields.clone(),
+                            ret_type: Some(Type::Basic(e.name.clone())),
+                        };
+                        if !self.table.insert_global(var.name.clone(), info) {
+                            self.errors.push(SemanticError {
+                                line: 0,
+                                column: 0,
+                                code: "E012".to_string(),
+                                message: format!("duplicate enum variant or function name '{}'", var.name),
+                                hint: "Ensure all enum variant names are globally unique.".to_string(),
+                            });
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -515,7 +535,74 @@ impl TypeChecker {
                 let rhs_type = self.infer_expr(value);
 
                 if let AssignOp::Eq = op {
-                    if let Expr::Ident(name) = target {
+                    if let Expr::Tuple(targets) = target {
+                        match &rhs_type {
+                            Type::Tuple(types) => {
+                                if targets.len() != types.len() {
+                                    self.errors.push(SemanticError {
+                                        line: 0,
+                                        column: 0,
+                                        code: "E001".to_string(),
+                                        message: format!(
+                                            "type mismatch: cannot unpack tuple of size {} into {} variables",
+                                            types.len(), targets.len()
+                                        ),
+                                        hint: "Ensure the number of variables matches the tuple size.".to_string(),
+                                    });
+                                    return;
+                                }
+                                for (i, t_expr) in targets.iter().enumerate() {
+                                    let field_ty = &types[i];
+                                    if let Expr::Ident(name) = t_expr {
+                                        if self.table.lookup(name).is_none() {
+                                            self.table.insert(name.clone(), SymbolInfo::Variable(field_ty.clone()));
+                                        } else {
+                                            let existing_ty = self.infer_expr(t_expr);
+                                            if !types_match(&existing_ty, field_ty) {
+                                                self.errors.push(SemanticError {
+                                                    line: 0,
+                                                    column: 0,
+                                                    code: "E001".to_string(),
+                                                    message: format!(
+                                                        "type mismatch: expected '{:?}', found '{:?}'",
+                                                        existing_ty, field_ty
+                                                    ),
+                                                    hint: "Ensure the assigned value matches the variable's type.".to_string(),
+                                                });
+                                            }
+                                        }
+                                    } else {
+                                        let existing_ty = self.infer_expr(t_expr);
+                                        if !types_match(&existing_ty, field_ty) {
+                                            self.errors.push(SemanticError {
+                                                line: 0,
+                                                column: 0,
+                                                code: "E001".to_string(),
+                                                message: format!(
+                                                    "type mismatch: expected '{:?}', found '{:?}'",
+                                                    existing_ty, field_ty
+                                                ),
+                                                hint: "Ensure the assigned value matches the variable's type.".to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                self.errors.push(SemanticError {
+                                    line: 0,
+                                    column: 0,
+                                    code: "E001".to_string(),
+                                    message: format!(
+                                        "type mismatch: expected tuple, found '{:?}'",
+                                        rhs_type
+                                    ),
+                                    hint: "Cannot unpack a non-tuple value.".to_string(),
+                                });
+                            }
+                        }
+                        return;
+                    } else if let Expr::Ident(name) = target {
                         if self.table.lookup(name).is_none() {
                             self.table.insert(name.clone(), SymbolInfo::Variable(rhs_type.clone()));
                             return;
@@ -666,6 +753,7 @@ impl TypeChecker {
             Stmt::Match { expr, cases } => {
                 let expr_type = self.infer_expr(expr);
                 for (arm, body) in cases {
+                    let mut variant_bindings = Vec::new();
                     match arm {
                         MatchArm::Literal(lit) => {
                             let arm_type = match lit {
@@ -688,8 +776,56 @@ impl TypeChecker {
                             }
                         }
                         MatchArm::Wildcard => {}
+                        MatchArm::Variant { variant_name, bindings } => {
+                            if let Some(SymbolInfo::Function { params, ret_type }) = self.table.lookup(variant_name).cloned() {
+                                if let Some(rt) = &ret_type {
+                                    if !types_match(rt, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
+                                        self.errors.push(SemanticError {
+                                            line: 0,
+                                            column: 0,
+                                            code: "E001".to_string(),
+                                            message: format!(
+                                                "type mismatch: match pattern variant '{}' returns '{:?}', but matched expression has type '{:?}'",
+                                                variant_name, rt, expr_type
+                                            ),
+                                            hint: "Enum variant must belong to the matched enum type.".to_string(),
+                                        });
+                                    }
+                                }
+                                if bindings.len() != params.len() {
+                                    self.errors.push(SemanticError {
+                                        line: 0,
+                                        column: 0,
+                                        code: "E004".to_string(),
+                                        message: format!(
+                                            "wrong number of bindings for variant '{}': expected {}, found {}",
+                                            variant_name, params.len(), bindings.len()
+                                        ),
+                                        hint: format!("Ensure you provide exactly {} bound variables for this variant.", params.len()),
+                                    });
+                                }
+                                for (i, binding) in bindings.iter().enumerate() {
+                                    if i < params.len() {
+                                        variant_bindings.push((binding.clone(), params[i].clone()));
+                                    } else {
+                                        variant_bindings.push((binding.clone(), Type::Basic("unknown".to_string())));
+                                    }
+                                }
+                            } else {
+                                self.errors.push(SemanticError {
+                                    line: 0,
+                                    column: 0,
+                                    code: "E003".to_string(),
+                                    message: format!("undefined enum variant '{}'", variant_name),
+                                    hint: "Ensure the variant name is defined in a declared enum.".to_string(),
+                                });
+                            }
+                        }
                     }
                     self.table.enter_scope();
+                    for (name, ty) in variant_bindings {
+                        self.table.insert(name, SymbolInfo::Variable(ty));
+                    }
                     self.check_block(body);
                     self.table.exit_scope();
                 }
@@ -1011,6 +1147,10 @@ impl TypeChecker {
                     Type::Result(t) => *t,
                     _ => Type::Basic("unknown".to_string()),
                 }
+            }
+            Expr::Tuple(items) => {
+                let types = items.iter().map(|item| self.infer_expr(item)).collect();
+                Type::Tuple(types)
             }
         }
     }

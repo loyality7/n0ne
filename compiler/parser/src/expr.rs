@@ -8,6 +8,24 @@ impl Parser {
         self.parse_expr_precedence(Precedence::None)
     }
 
+    pub(crate) fn parse_expr_comma(&mut self) -> Expr {
+        let first = self.parse_expr_precedence(Precedence::None);
+        if self.check(TokenKind::Comma) {
+            let mut exprs = vec![first];
+            while self.check(TokenKind::Comma) {
+                self.consume(TokenKind::Comma);
+                // Allow trailing comma in tuples before closing parenthesis, newline, or assignment operator
+                if self.check(TokenKind::RParen) || self.check(TokenKind::Newline) || self.check(TokenKind::Eq) {
+                    break;
+                }
+                exprs.push(self.parse_expr_precedence(Precedence::None));
+            }
+            Expr::Tuple(exprs)
+        } else {
+            first
+        }
+    }
+
     pub(crate) fn parse_expr_precedence(&mut self, prec: Precedence) -> Expr {
         let mut left = self.parse_prefix();
 
@@ -27,9 +45,14 @@ impl Parser {
             TokenKind::String(s) => Expr::Literal(Literal::String(s.clone())),
             TokenKind::Bool(b) => Expr::Literal(Literal::Bool(*b)),
             TokenKind::LParen => {
-                let expr = self.parse_expr();
-                self.consume(TokenKind::RParen);
-                expr
+                if self.check(TokenKind::RParen) {
+                    self.advance(); // consume RParen
+                    Expr::Tuple(vec![])
+                } else {
+                    let expr = self.parse_expr_comma();
+                    self.consume(TokenKind::RParen);
+                    expr
+                }
             }
             TokenKind::FStringStart => {
                 let mut parts = Vec::new();

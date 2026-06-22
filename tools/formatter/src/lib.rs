@@ -62,6 +62,7 @@ impl Formatter {
             TopLevelDecl::FnDecl(f) => self.format_fn(f),
             TopLevelDecl::TaskDecl(t) => self.format_task(t),
             TopLevelDecl::TypeDecl(t) => self.format_type(t),
+            TopLevelDecl::EnumDecl(e) => self.format_enum(e),
             TopLevelDecl::ConstDecl(c) => {
                 self.emit(&format!("const {} = ", c.name));
                 self.format_expr(&c.value);
@@ -81,6 +82,10 @@ impl Formatter {
             Type::Map(k, v) => format!("map[{}, {}]", self.type_to_str(k), self.type_to_str(v)),
             Type::Result(inner) => format!("result[{}]", self.type_to_str(inner)),
             Type::Option(inner) => format!("option[{}]", self.type_to_str(inner)),
+            Type::Tuple(types) => {
+                let formatted: Vec<String> = types.iter().map(|t| self.type_to_str(t)).collect();
+                format!("({})", formatted.join(", "))
+            }
         }
     }
 
@@ -124,6 +129,27 @@ impl Formatter {
         self.indent_level += 1;
         for field in &t.fields {
             self.emit(&format!("{}: {}", field.name, self.type_to_str(&field.type_ann)));
+            self.newline();
+        }
+        self.indent_level -= 1;
+    }
+
+    fn format_enum(&mut self, e: &EnumDecl) {
+        self.emit(&format!("enum {}\n", e.name));
+        self.indent_level += 1;
+        for var in &e.variants {
+            self.push_indent();
+            self.out.push_str(&var.name);
+            if !var.fields.is_empty() {
+                self.out.push('(');
+                for (i, field_type) in var.fields.iter().enumerate() {
+                    if i > 0 {
+                        self.out.push_str(", ");
+                    }
+                    self.out.push_str(&self.type_to_str(field_type));
+                }
+                self.out.push(')');
+            }
             self.newline();
         }
         self.indent_level -= 1;
@@ -223,6 +249,19 @@ impl Formatter {
                             Literal::String(s) => self.out.push_str(&format!("\"{}\"", s.replace('\"', "\\\"").replace('\n', "\\n"))),
                             Literal::Bool(b) => self.out.push_str(if *b { "true" } else { "false" }),
                         },
+                        MatchArm::Variant { variant_name, bindings } => {
+                            self.out.push_str(variant_name);
+                            if !bindings.is_empty() {
+                                self.out.push('(');
+                                for (i, b) in bindings.iter().enumerate() {
+                                    if i > 0 {
+                                        self.out.push_str(", ");
+                                    }
+                                    self.out.push_str(b);
+                                }
+                                self.out.push(')');
+                            }
+                        }
                         MatchArm::Wildcard => self.out.push_str("_"),
                     }
                     self.out.push_str(" ->");
@@ -380,6 +419,24 @@ impl Formatter {
             Expr::TryExpr(inner) => {
                 self.out.push_str("try ");
                 self.format_expr(inner);
+            }
+            Expr::Tuple(items) => {
+                if items.is_empty() {
+                    self.out.push_str("()");
+                } else if items.len() == 1 {
+                    self.out.push('(');
+                    self.format_expr(&items[0]);
+                    self.out.push_str(",)");
+                } else {
+                    self.out.push('(');
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 {
+                            self.out.push_str(", ");
+                        }
+                        self.format_expr(item);
+                    }
+                    self.out.push(')');
+                }
             }
         }
     }

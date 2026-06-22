@@ -42,10 +42,10 @@ impl Parser {
             Stmt::ConstDecl(const_decl)
         } else {
             // Either assign statement or expression statement
-            let target = self.parse_expr();
+            let target = self.parse_expr_comma();
             if self.is_assign_op() {
                 let op = self.parse_assign_op();
-                let value = self.parse_expr();
+                let value = self.parse_expr_comma();
                 self.consume(TokenKind::Newline);
                 Stmt::Assign { target, op, value }
             } else {
@@ -186,6 +186,37 @@ impl Parser {
                 self.advance();
                 MatchArm::Wildcard
             }
+            TokenKind::Ident(name) => {
+                let var_name = name.clone();
+                self.advance();
+                let mut bindings = Vec::new();
+                if self.check(TokenKind::LParen) {
+                    self.consume(TokenKind::LParen);
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            let b_tok = self.advance();
+                            let b_name = match &b_tok.kind {
+                                TokenKind::Ident(n) => n.clone(),
+                                other => panic!(
+                                    "Parser error: Expected identifier in variant pattern, found '{}' at {}:{}",
+                                    other, b_tok.line, b_tok.column
+                                ),
+                            };
+                            bindings.push(b_name);
+                            if self.check(TokenKind::Comma) {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    self.consume(TokenKind::RParen);
+                }
+                MatchArm::Variant {
+                    variant_name: var_name,
+                    bindings,
+                }
+            }
             TokenKind::Number(n) => {
                 let val = *n;
                 self.advance();
@@ -207,7 +238,7 @@ impl Parser {
                 MatchArm::Literal(Literal::Bool(val))
             }
             other => panic!(
-                "Parser error: Expected match arm (literal or wildcard '_'), found '{}' at {}:{}",
+                "Parser error: Expected match arm (literal, variant or wildcard '_'), found '{}' at {}:{}",
                 other, tok.line, tok.column
             ),
         }

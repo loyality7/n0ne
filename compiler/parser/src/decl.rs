@@ -20,6 +20,8 @@ impl Parser {
             TopLevelDecl::FnDecl(self.parse_fn_decl())
         } else if self.check(TokenKind::Type) {
             TopLevelDecl::TypeDecl(self.parse_type_decl())
+        } else if self.check(TokenKind::Enum) {
+            TopLevelDecl::EnumDecl(self.parse_enum_decl())
         } else if self.check(TokenKind::Task) {
             TopLevelDecl::TaskDecl(self.parse_task_decl())
         } else if self.check(TokenKind::Use) {
@@ -185,6 +187,61 @@ impl Parser {
         TypeDecl { name, fields }
     }
 
+    pub(crate) fn parse_enum_decl(&mut self) -> EnumDecl {
+        self.consume(TokenKind::Enum);
+        let name_tok = self.advance();
+        let name = match &name_tok.kind {
+            TokenKind::Ident(n) => n.clone(),
+            other => panic!(
+                "Parser error: Expected enum name, found '{}' at {}:{}",
+                other, name_tok.line, name_tok.column
+            ),
+        };
+        self.consume(TokenKind::Newline);
+        self.consume(TokenKind::Indent);
+
+        let mut variants = Vec::new();
+        while !self.check(TokenKind::Dedent) && !self.is_at_end() {
+            if self.check(TokenKind::Newline) {
+                self.advance();
+                continue;
+            }
+            let v_tok = self.advance();
+            let v_name = match &v_tok.kind {
+                TokenKind::Ident(n) => n.clone(),
+                other => panic!(
+                    "Parser error: Expected variant name, found '{}' at {}:{}",
+                    other, v_tok.line, v_tok.column
+                ),
+            };
+
+            let mut fields = Vec::new();
+            if self.check(TokenKind::LParen) {
+                self.consume(TokenKind::LParen);
+                if !self.check(TokenKind::RParen) {
+                    loop {
+                        let f_type = self.parse_type();
+                        fields.push(f_type);
+                        if self.check(TokenKind::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                self.consume(TokenKind::RParen);
+            }
+            self.consume(TokenKind::Newline);
+            variants.push(EnumVariant {
+                name: v_name,
+                fields,
+            });
+        }
+        self.consume(TokenKind::Dedent);
+
+        EnumDecl { name, variants }
+    }
+
     pub(crate) fn parse_task_decl(&mut self) -> TaskDecl {
         self.consume(TokenKind::Task);
         let name_tok = self.advance();
@@ -285,6 +342,18 @@ impl Parser {
     pub(crate) fn parse_type(&mut self) -> Type {
         let tok = self.advance();
         match &tok.kind {
+            TokenKind::LParen => {
+                let mut types = Vec::new();
+                if !self.check(TokenKind::RParen) {
+                    types.push(self.parse_type());
+                    while self.check(TokenKind::Comma) {
+                        self.consume(TokenKind::Comma);
+                        types.push(self.parse_type());
+                    }
+                }
+                self.consume(TokenKind::RParen);
+                Type::Tuple(types)
+            }
             TokenKind::Ident(name) => match name.as_str() {
                 "list" => {
                     self.consume(TokenKind::LBracket);
