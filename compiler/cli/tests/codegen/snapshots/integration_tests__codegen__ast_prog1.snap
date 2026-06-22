@@ -14,12 +14,14 @@ Program {
                         type_ann: Basic(
                             "int",
                         ),
+                        default_value: None,
                     },
                     Param {
                         name: "b",
                         type_ann: Basic(
                             "int",
                         ),
+                        default_value: None,
                     },
                 ],
                 return_type: Some(

@@ -23,7 +23,7 @@ pub struct LLVMGenerator {
     pub(crate) structs: HashMap<String, TypeDecl>,
     pub(crate) enums: HashMap<String, ast::EnumDecl>,
     pub(crate) current_ret_type: String,
-    pub(crate) functions: HashMap<String, Type>,
+    pub(crate) functions: HashMap<String, ast::FnDecl>,
     pub(crate) global_consts: HashMap<String, Type>,
     pub(crate) loop_stack: Vec<(String, String)>, // (continue_lbl, break_lbl)
     pub(crate) compiled_files: std::collections::HashSet<std::path::PathBuf>,
@@ -62,7 +62,7 @@ impl LLVMGenerator {
                     self.enums.insert(e.name.clone(), e.clone());
                 }
                 ast::TopLevelDecl::FnDecl(f) => {
-                    self.functions.insert(f.name.clone(), f.return_type.clone().unwrap_or(Type::Basic("void".to_string())));
+                    self.functions.insert(f.name.clone(), f.clone());
                 }
                 ast::TopLevelDecl::ConstDecl(c) => {
                     let val_ty = self.infer_expr_type(&c.value);

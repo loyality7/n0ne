@@ -135,7 +135,7 @@ impl LLVMGenerator {
                                         self.structs.insert(t.name.clone(), t.clone());
                                     }
                                     ast::TopLevelDecl::FnDecl(f) => {
-                                        self.functions.insert(f.name.clone(), f.return_type.clone().unwrap_or(Type::Basic("void".to_string())));
+                                        self.functions.insert(f.name.clone(), f.clone());
                                     }
                                     ast::TopLevelDecl::ConstDecl(c) => {
                                         let val_ty = self.infer_expr_type(&c.value);

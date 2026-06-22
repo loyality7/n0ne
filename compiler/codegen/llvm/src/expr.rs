@@ -489,9 +489,19 @@ impl LLVMGenerator {
 
                     let llvm_name = if is_builtin { mapped_name.to_string() } else { format!("n0_{}", mapped_name) };
                     let mut arg_regs = Vec::new();
-                    for arg in args {
-                        let mut arg_reg = self.gen_expr(arg);
-                        let arg_ty = self.infer_expr_type(arg);
+                    let target_params_len = if let Some(f_decl) = self.functions.get(name) { std::cmp::max(f_decl.params.len(), args.len()) } else { args.len() };
+                    for i in 0..target_params_len {
+                        let mut arg_reg;
+                        let arg_ty;
+                        if i < args.len() {
+                            arg_reg = self.gen_expr(&args[i]);
+                            arg_ty = self.infer_expr_type(&args[i]);
+                        } else if let Some(def_expr) = self.functions.get(name).and_then(|f| f.params[i].default_value.clone()) {
+                            arg_reg = self.gen_expr(&def_expr);
+                            arg_ty = self.infer_expr_type(&def_expr);
+                        } else {
+                            unreachable!("Missing required argument without default value");
+                        }
                         let mut arg_llvm_ty = self.llvm_type(&arg_ty);
                         if (llvm_name == "n0_make_some" || llvm_name == "n0_make_ok") && arg_llvm_ty == "ptr" {
                             let cast_reg = self.next_reg();
@@ -516,7 +526,9 @@ impl LLVMGenerator {
                             ret_llvm_ty = "void".to_string();
                         }
                     } else {
-                        if let Some(ret_ty) = self.functions.get(name) {
+                        if let Some(f_decl) = self.functions.get(name) {
+                            let def_ty = Type::Basic("void".to_string());
+                            let ret_ty = f_decl.return_type.as_ref().unwrap_or(&def_ty);
                             ret_llvm_ty = self.llvm_type(ret_ty);
                         } else if name.starts_with("make_") {
                             ret_llvm_ty = "ptr".to_string();
@@ -677,15 +689,27 @@ impl LLVMGenerator {
                             } else {
                                 let llvm_name = format!("n0_{}", method_name);
                                 let mut arg_regs = Vec::new();
-                                for arg in args {
-                                    let arg_reg = self.gen_expr(arg);
-                                    let arg_ty = self.infer_expr_type(arg);
+                                let target_params_len = if let Some(f_decl) = self.functions.get(method_name) { std::cmp::max(f_decl.params.len(), args.len()) } else { args.len() };
+                                for i in 0..target_params_len {
+                                    let arg_reg;
+                                    let arg_ty;
+                                    if i < args.len() {
+                                        arg_reg = self.gen_expr(&args[i]);
+                                        arg_ty = self.infer_expr_type(&args[i]);
+                                    } else if let Some(def_expr) = self.functions.get(method_name).and_then(|f| f.params[i].default_value.clone()) {
+                                        arg_reg = self.gen_expr(&def_expr);
+                                        arg_ty = self.infer_expr_type(&def_expr);
+                                    } else {
+                                        unreachable!("Missing required argument without default value");
+                                    }
                                     let arg_llvm_ty = self.llvm_type(&arg_ty);
                                     arg_regs.push(format!("{} {}", arg_llvm_ty, arg_reg));
                                 }
 
                                 let mut ret_llvm_ty = "i64".to_string();
-                                if let Some(ret_ty) = self.functions.get(method_name) {
+                                if let Some(f_decl) = self.functions.get(method_name) {
+                                    let def_ty = Type::Basic("void".to_string());
+                                    let ret_ty = f_decl.return_type.as_ref().unwrap_or(&def_ty);
                                     ret_llvm_ty = self.llvm_type(ret_ty);
                                 }
 
@@ -716,7 +740,9 @@ impl LLVMGenerator {
                     
                     let mut mapped_fn_name = format!("n0_{}", method_name);
                     let mut ret_llvm_ty = "i64".to_string();
-                    if let Some(ret_ty) = self.functions.get(method_name) {
+                    if let Some(f_decl) = self.functions.get(method_name) {
+                        let def_ty = Type::Basic("void".to_string());
+                        let ret_ty = f_decl.return_type.as_ref().unwrap_or(&def_ty);
                         ret_llvm_ty = self.llvm_type(ret_ty);
                     }
                     let mut is_void = ret_llvm_ty == "void";

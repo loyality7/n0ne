@@ -35,6 +35,7 @@ pub struct Receiver {
 pub struct Param {
     pub name: String,
     pub type_ann: Type,
+    pub default_value: Option<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

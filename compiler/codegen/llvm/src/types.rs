@@ -62,9 +62,10 @@ impl LLVMGenerator {
                     }
                     if name == "some" || name == "none" {
                         return Type::Option(Box::new(Type::Basic("unknown".to_string())));
-                    }
-                    if let Some(ret_ty) = self.functions.get(name) {
-                        return ret_ty.clone();
+                    } else if self.functions.contains_key(name) {
+                        let f_decl = self.functions.get(name).unwrap();
+                        let def_ty = Type::Basic("void".to_string());
+                        return f_decl.return_type.as_ref().unwrap_or(&def_ty).clone();
                     }
                     if self.structs.contains_key(name) {
                         return Type::Basic(name.clone());
@@ -100,8 +101,9 @@ impl LLVMGenerator {
                                     ("http", "post") => return Type::Basic("string".to_string()),
                                     _ => {}
                                 }
-                            } else if let Some(ret_ty) = self.functions.get(method_name) {
-                                return ret_ty.clone();
+                            } else if let Some(f_decl) = self.functions.get(method_name) {
+                                let def_ty = Type::Basic("void".to_string());
+                                return f_decl.return_type.as_ref().unwrap_or(&def_ty).clone();
                             }
                         }
                     }

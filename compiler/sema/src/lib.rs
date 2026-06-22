@@ -18,6 +18,7 @@ pub enum SymbolInfo {
     Variable(Type),
     Function {
         params: Vec<Type>,
+        min_args: usize,
         ret_type: Option<Type>,
     },
 }
@@ -89,11 +90,10 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn fn_sym(name: &str, params: Vec<Type>, ret_type: Type) -> Self {
+        let min_args = params.len();
         Self {
             name: name.to_string(),
-            info: SymbolInfo::Function {
-                params,
-                ret_type: Some(ret_type),
+            info: SymbolInfo::Function { params, min_args, ret_type: Some(ret_type),
             },
         }
     }
@@ -164,68 +164,52 @@ impl TypeChecker {
             inside_loop: 0,
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string())],
-            ret_type: None,
+            params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
         });
         tc.table.insert_global("ok".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string())],
-            ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
+            params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
         });
         tc.table.insert_global("err".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("string".to_string())],
-            ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
+            params: vec![Type::Basic("string".to_string())], min_args: 1, ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
         });
         tc.table.insert_global("some".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string())],
-            ret_type: Some(Type::Option(Box::new(Type::Basic("unknown".to_string())))),
+            params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: Some(Type::Option(Box::new(Type::Basic("unknown".to_string())))),
         });
         tc.table.insert_global("none".to_string(), SymbolInfo::Function {
-            params: vec![],
-            ret_type: Some(Type::Option(Box::new(Type::Basic("unknown".to_string())))),
+            params: vec![], min_args: 0, ret_type: Some(Type::Option(Box::new(Type::Basic("unknown".to_string())))),
         });
         tc.table.insert_global("print".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string())],
-            ret_type: None,
+            params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
         });
         tc.table.insert_global("show_err".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string())],
-            ret_type: None,
+            params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
         });
         tc.table.insert_global("print_err".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string())],
-            ret_type: None,
+            params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
         });
         tc.table.insert_global("c_alloc".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("int".to_string())],
-            ret_type: Some(Type::Basic("unknown".to_string())),
+            params: vec![Type::Basic("int".to_string())], min_args: 1, ret_type: Some(Type::Basic("unknown".to_string())),
         });
         tc.table.insert_global("c_store_int".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string()), Type::Basic("int".to_string())],
-            ret_type: None,
+            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string()), Type::Basic("int".to_string())], min_args: 3, ret_type: None,
         });
         tc.table.insert_global("c_store_string".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string()), Type::Basic("string".to_string())],
-            ret_type: None,
+            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string()), Type::Basic("string".to_string())], min_args: 3, ret_type: None,
         });
         tc.table.insert_global("c_load_int".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string())],
-            ret_type: Some(Type::Basic("int".to_string())),
+            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string())], min_args: 2, ret_type: Some(Type::Basic("int".to_string())),
         });
         tc.table.insert_global("c_load_string".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string())],
-            ret_type: Some(Type::Basic("string".to_string())),
+            params: vec![Type::Basic("unknown".to_string()), Type::Basic("int".to_string())], min_args: 2, ret_type: Some(Type::Basic("string".to_string())),
         });
         tc.table.insert_global("c_interpolate".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("string".to_string()), Type::Basic("string".to_string())],
-            ret_type: Some(Type::Basic("string".to_string())),
+            params: vec![Type::Basic("string".to_string()), Type::Basic("string".to_string())], min_args: 2, ret_type: Some(Type::Basic("string".to_string())),
         });
         tc.table.insert_global("c_argc".to_string(), SymbolInfo::Function {
-            params: vec![],
-            ret_type: Some(Type::Basic("int".to_string())),
+            params: vec![], min_args: 0, ret_type: Some(Type::Basic("int".to_string())),
         });
         tc.table.insert_global("c_argv".to_string(), SymbolInfo::Function {
-            params: vec![Type::Basic("int".to_string())],
-            ret_type: Some(Type::Basic("string".to_string())),
+            params: vec![Type::Basic("int".to_string())], min_args: 1, ret_type: Some(Type::Basic("string".to_string())),
         });
         tc
     }
@@ -242,10 +226,9 @@ impl TypeChecker {
         for decl in &prog.decls {
             match decl {
                 TopLevelDecl::FnDecl(f) => {
-                    let params = f.params.iter().map(|p| p.type_ann.clone()).collect();
-                    let info = SymbolInfo::Function {
-                        params,
-                        ret_type: f.return_type.clone(),
+                    let params: Vec<Type> = f.params.iter().map(|p| p.type_ann.clone()).collect();
+                    let min_args = f.params.iter().filter(|p| p.default_value.is_none()).count();
+                    let info = SymbolInfo::Function { params, min_args, ret_type: f.return_type.clone(),
                     };
                     if !self.table.insert_global(f.name.clone(), info) {
                         self.errors.push(SemanticError {
@@ -259,8 +242,7 @@ impl TypeChecker {
                 }
                 TopLevelDecl::TaskDecl(t) => {
                     let info = SymbolInfo::Function {
-                        params: vec![],
-                        ret_type: None,
+                        params: vec![], min_args: 0, ret_type: None,
                     };
                     if !self.table.insert_global(t.name.clone(), info) {
                         self.errors.push(SemanticError {
@@ -274,8 +256,7 @@ impl TypeChecker {
                 }
                 TopLevelDecl::TypeDecl(t) => {
                     let info = SymbolInfo::Function {
-                        params: vec![],
-                        ret_type: Some(Type::Basic(t.name.clone())),
+                        params: vec![], min_args: 0, ret_type: Some(Type::Basic(t.name.clone())),
                     };
                     self.table.insert_global(t.name.clone(), info);
                 }
@@ -283,6 +264,7 @@ impl TypeChecker {
                     for var in &e.variants {
                         let info = SymbolInfo::Function {
                             params: var.fields.clone(),
+                            min_args: var.fields.len(),
                             ret_type: Some(Type::Basic(e.name.clone())),
                         };
                         if !self.table.insert_global(var.name.clone(), info) {
@@ -473,6 +455,21 @@ impl TypeChecker {
         }
 
         for param in &decl.params {
+            if let Some(default_val) = &param.default_value {
+                let default_ty = self.infer_expr(default_val);
+                if !types_match(&param.type_ann, &default_ty) {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E001".to_string(),
+                        message: format!(
+                            "type mismatch: expected '{:?}', found '{:?}'",
+                            param.type_ann, default_ty
+                        ),
+                        hint: "Ensure the default value matches the parameter's type.".to_string(),
+                    });
+                }
+            }
             self.table.insert(
                 param.name.clone(),
                 SymbolInfo::Variable(param.type_ann.clone()),
@@ -777,7 +774,7 @@ impl TypeChecker {
                         }
                         MatchArm::Wildcard => {}
                         MatchArm::Variant { variant_name, bindings } => {
-                            if let Some(SymbolInfo::Function { params, ret_type }) = self.table.lookup(variant_name).cloned() {
+                            if let Some(SymbolInfo::Function { params, min_args, ret_type }) = self.table.lookup(variant_name).cloned() {
                                 if let Some(rt) = &ret_type {
                                     if !types_match(rt, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
                                         self.errors.push(SemanticError {
@@ -928,17 +925,18 @@ impl TypeChecker {
             Expr::UnaryExpr { op: _, expr: inner } => self.infer_expr(inner),
             Expr::CallExpr { callee, args } => {
                 if let Expr::Ident(name) = &**callee {
-                    if let Some(SymbolInfo::Function { params, ret_type }) =
+                    if let Some(SymbolInfo::Function { params, min_args, ret_type }) =
                         self.table.lookup(name).cloned()
                     {
-                        if args.len() != params.len() {
+                        if args.len() < min_args || args.len() > params.len() {
                             self.errors.push(SemanticError {
                                 line: 0,
                                 column: 0,
                                 code: "E004".to_string(),
                                 message: format!(
-                                    "wrong argument count for function '{}': expected {}, found {}",
+                                    "wrong argument count for function '{}': expected {}-{}, found {}",
                                     name,
+                                    min_args,
                                     params.len(),
                                     args.len()
                                 ),
@@ -990,15 +988,15 @@ impl TypeChecker {
                         let fn_sig = self.imported_modules.get(mod_name)
                             .and_then(|mod_syms| mod_syms.get(method_name))
                             .cloned();
-                        if let Some(SymbolInfo::Function { params, ret_type }) = fn_sig {
-                            if args.len() != params.len() {
+                        if let Some(SymbolInfo::Function { params, min_args, ret_type }) = fn_sig {
+                            if args.len() < min_args || args.len() > params.len() {
                                 self.errors.push(SemanticError {
                                     line: 0,
                                     column: 0,
                                     code: "E004".to_string(),
                                     message: format!(
-                                        "wrong argument count for function '{}.{}': expected {}, found {}",
-                                        mod_name, method_name, params.len(), args.len()
+                                        "wrong argument count for function '{}.{}': expected {}-{}, found {}",
+                                        mod_name, method_name, min_args, params.len(), args.len()
                                     ),
                                     hint: "Pass the correct number of arguments.".to_string(),
                                 });

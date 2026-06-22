@@ -349,3 +349,25 @@ compile_error_test!(tuple_unpack_non_tuple,
     contains: "expected tuple, found",
 );
 
+// SECTION 15 — DEFAULT ARGUMENTS
+test!(default_args_basic,
+    source: "fn greet(name: string = \"world\") -> string\n    return \"hello \" + name\n\ntask main\n    show(greet())\n    show(greet(\"n0ne\"))",
+    stdout: "hello world\nhello n0ne\n"
+);
+
+test!(default_args_multiple,
+    source: "fn add(a: int, b: int = 10, c: int = 20) -> int\n    return a + b + c\n\ntask main\n    show(add(5).to_string())\n    show(add(5, 15).to_string())\n    show(add(5, 15, 25).to_string())",
+    stdout: "35\n40\n45\n"
+);
+
+compile_error_test!(default_args_missing_required,
+    source: "fn add(a: int, b: int = 10) -> int\n    return a + b\n\ntask main\n    add()",
+    contains: "E004",
+    contains: "wrong argument count for function 'add'",
+);
+
+compile_error_test!(default_args_type_mismatch,
+    source: "fn greet(name: string = 42)\n    show(name)\ntask main\n    greet()",
+    contains: "E001",
+    contains: "type mismatch",
+);

@@ -114,9 +114,16 @@ impl Parser {
                 };
                 self.consume(TokenKind::Colon);
                 let p_type = self.parse_type();
+                let default_value = if self.check(TokenKind::Eq) {
+                    self.consume(TokenKind::Eq);
+                    Some(self.parse_expr())
+                } else {
+                    None
+                };
                 params.push(Param {
                     name: p_name,
                     type_ann: p_type,
+                    default_value,
                 });
                 if self.check(TokenKind::Comma) {
                     self.advance();
