@@ -290,6 +290,14 @@ impl LLVMGenerator {
                 let types = items.iter().map(|item| self.infer_expr_type(item)).collect();
                 Type::Tuple(types)
             }
+            Expr::Index { expr, index: _, line: _ } => {
+                let col_ty = self.infer_expr_type(expr);
+                match col_ty {
+                    Type::List(elem_ty) => *elem_ty,
+                    Type::Map(_, val_ty) => Type::Option(Box::new(*val_ty)),
+                    _ => Type::Basic("unknown".to_string()),
+                }
+            }
             _ => Type::Basic("int".to_string()),
         }
     }

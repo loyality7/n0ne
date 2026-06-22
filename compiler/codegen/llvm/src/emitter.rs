@@ -109,6 +109,23 @@ impl LLVMGenerator {
         name
     }
 
+    pub(crate) fn get_current_file_name_ptr(&mut self) -> String {
+        let file_name = self.current_file
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("main.n0")
+            .to_string();
+        let name = self.add_string_constant(&file_name);
+        let len = self.string_constants.last().unwrap().2;
+        let r = self.next_reg();
+        self.body.push_str(&format!(
+            "    {} = getelementptr inbounds [{} x i8], ptr {}, i64 0, i64 0\n",
+            r, len, name
+        ));
+        r
+    }
+
     pub(crate) fn gen_top_level(&mut self, decl: &TopLevelDecl) {
         match decl {
             TopLevelDecl::FnDecl(f) => self.gen_fn(f),

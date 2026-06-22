@@ -442,6 +442,12 @@ impl Formatter {
                 self.out.push_str("try ");
                 self.format_expr(inner);
             }
+            Expr::Index { expr: inner, index, .. } => {
+                self.format_expr(inner);
+                self.out.push('[');
+                self.format_expr(index);
+                self.out.push(']');
+            }
             Expr::Tuple(items) => {
                 if items.is_empty() {
                     self.out.push_str("()");

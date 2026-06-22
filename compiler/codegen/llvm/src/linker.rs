@@ -70,11 +70,14 @@ pub(crate) fn which_in_path(cmd: &str) -> bool {
     false
 }
 
-pub fn compile_llvm(ast: &Program, out_path: &Path, debug: bool) -> std::io::Result<()> {
+pub fn compile_llvm(ast: &Program, out_path: &Path, debug: bool, src_path: Option<&Path>) -> std::io::Result<()> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     let mut generator = LLVMGenerator::new();
+    if let Some(sp) = src_path {
+        generator.current_file = Some(sp.to_path_buf());
+    }
     let ir = generator.generate(ast);
 
     let unique_id = format!("{}_{}", std::process::id(), COUNTER.fetch_add(1, Ordering::SeqCst));

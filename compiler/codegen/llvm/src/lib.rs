@@ -137,6 +137,7 @@ impl LLVMGenerator {
         self.globals.push_str("declare ptr @n0_str_to_float(ptr)\n");
 
         // List primitive methods
+        self.globals.push_str("declare void @n0_bounds_check(ptr, i64, ptr, i64)\n");
         self.globals.push_str("declare i64 @n0_list_len(ptr)\n");
         self.globals.push_str("declare ptr @n0_list_map(ptr, ptr)
 ");

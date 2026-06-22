@@ -1250,6 +1250,49 @@ impl TypeChecker {
                 self.current_fn_return_type = prev_ret;
                 Type::Function(param_types, Box::new(return_type.clone().unwrap_or(Type::Basic("unknown".to_string()))))
             }
+            Expr::Index { expr: inner, index, line } => {
+                let inner_ty = self.infer_expr(inner);
+                let index_ty = self.infer_expr(index);
+                if inner_ty == Type::Basic("unknown".to_string()) || index_ty == Type::Basic("unknown".to_string()) {
+                    return Type::Basic("unknown".to_string());
+                }
+                match inner_ty {
+                    Type::List(elem_ty) => {
+                        if !self.types_match(&Type::Basic("int".to_string()), &index_ty) {
+                            self.errors.push(SemanticError {
+                                line: *line,
+                                column: 0,
+                                code: "E018".to_string(),
+                                message: format!("list index must be an integer, found {:?}", index_ty),
+                                hint: "Use an integer index.".to_string(),
+                            });
+                        }
+                        (*elem_ty).clone()
+                    }
+                    Type::Map(key_ty, val_ty) => {
+                        if !self.types_match(&key_ty, &index_ty) {
+                            self.errors.push(SemanticError {
+                                line: *line,
+                                column: 0,
+                                code: "E018".to_string(),
+                                message: format!("map index must match key type {:?}, found {:?}", key_ty, index_ty),
+                                hint: "Use a key of the correct type.".to_string(),
+                            });
+                        }
+                        Type::Option(val_ty)
+                    }
+                    _ => {
+                        self.errors.push(SemanticError {
+                            line: *line,
+                            column: 0,
+                            code: "E019".to_string(),
+                            message: format!("cannot index type {:?}", inner_ty),
+                            hint: "Only lists and maps can be indexed.".to_string(),
+                        });
+                        Type::Basic("unknown".to_string())
+                    }
+                }
+            }
         }
     }
 

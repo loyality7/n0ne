@@ -158,6 +158,7 @@ impl Parser {
     pub(crate) fn current_precedence(&self) -> Precedence {
         match self.peek_kind() {
             TokenKind::LParen => Precedence::Call,
+            TokenKind::LBracket => Precedence::Call,
             TokenKind::Dot => Precedence::Call,
             TokenKind::Power => Precedence::Power,
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Factor,
@@ -194,6 +195,16 @@ impl Parser {
                 Expr::CallExpr {
                     callee: Box::new(left),
                     args,
+                }
+            }
+            TokenKind::LBracket => {
+                let line = tok.line;
+                let index = self.parse_expr();
+                self.consume(TokenKind::RBracket);
+                Expr::Index {
+                    expr: Box::new(left),
+                    index: Box::new(index),
+                    line,
                 }
             }
             TokenKind::Dot => {

@@ -197,7 +197,7 @@ fn build(file_path: &Path, debug: bool) -> PathBuf {
     
     let exe_path = build_dir.join(&exe_name);
 
-    if let Err(e) = codegen_llvm::compile_llvm(&ast, &exe_path, debug) {
+    if let Err(e) = codegen_llvm::compile_llvm(&ast, &exe_path, debug, Some(file_path)) {
         eprintln!("LLVM compilation failed: {}", e);
         exit(1);
     }

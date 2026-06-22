@@ -4,6 +4,8 @@ typedef unsigned long long size_t;
 typedef long long int64_t;
 int printf(const char* format, ...);
 int sprintf(char* str, const char* format, ...);
+int snprintf(char* str, size_t size, const char* format, ...);
+void exit(int status);
 void* malloc(size_t size);
 void* memset(void* ptr, int value, size_t num);
 void free(void* ptr);
@@ -1182,6 +1184,22 @@ int64_t n0_list_all(void* list, int64_t (*f)(int64_t)) {
         if (!f(data[i])) return 0;
     }
     return 1;
+}
+
+void n0_bounds_check(void* list, int64_t index, const char* file_name, int64_t line) {
+    if (!list) {
+        n0_show_err("runtime error: null list dereference");
+        exit(1);
+    }
+    int64_t len = *(int64_t*)((char*)list + 16);
+    if (index < 0 || index >= len) {
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+            "runtime error: list index %lld out of bounds\nlist has %lld items\n--> %s:%lld",
+            (long long)index, (long long)len, file_name, (long long)line);
+        n0_show_err(buf);
+        exit(1);
+    }
 }
 
 char* n0_http_post(const char* url, const char* body) {

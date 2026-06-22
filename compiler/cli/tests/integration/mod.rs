@@ -521,3 +521,76 @@ fn test_guard(cond: bool)
     contains: "guard else block must return, panic, break, or continue",
 );
 
+#[test]
+fn test_list_index_valid() {
+    let source = "
+task main
+    list = [10, 20, 30]
+    show(list[0].to_string())
+    show(list[1].to_string())
+    show(list[2].to_string())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0);
+    assert_eq!(res.stdout.replace("\r\n", "\n"), "10\n20\n30\n");
+}
+
+#[test]
+fn test_list_index_oob() {
+    let source = "
+task main
+    list = [10, 20, 30]
+    show(list[5].to_string())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 1);
+    let stderr = res.stderr.replace("\r\n", "\n");
+    assert!(stderr.contains("runtime error: list index 5 out of bounds"));
+    assert!(stderr.contains("list has 3 items"));
+    assert!(stderr.contains(":4"), "expected stderr to contain line 4 location. Stderr:\n{}", stderr);
+}
+
+#[test]
+fn test_list_index_negative() {
+    let source = "
+task main
+    list = [10, 20, 30]
+    idx = 0 - 1
+    show(list[idx].to_string())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 1);
+    let stderr = res.stderr.replace("\r\n", "\n");
+    assert!(stderr.contains("runtime error: list index -1 out of bounds"));
+    assert!(stderr.contains("list has 3 items"));
+    assert!(stderr.contains(":5"), "expected stderr to contain line 5 location. Stderr:\n{}", stderr);
+}
+
+#[test]
+fn test_map_index_valid() {
+    let source = "
+task main
+    m = {\"a\": 42}
+    opt = m[\"a\"]
+    if opt.is_some
+        show(opt.unwrap().to_string())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.replace("\r\n", "\n"), "42\n");
+}
+
+#[test]
+fn test_map_index_missing() {
+    let source = "
+task main
+    m = {\"a\": 42}
+    opt = m[\"b\"]
+    if opt.is_none
+        show(\"missing\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.replace("\r\n", "\n"), "missing\n");
+}
+

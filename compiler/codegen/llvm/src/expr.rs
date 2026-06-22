@@ -1292,6 +1292,63 @@ entry:
                 }
                 r
             }
+            Expr::Index { expr, index, line } => {
+                let col_reg = self.gen_expr(expr);
+                let col_ty = self.infer_expr_type(expr);
+                let idx_reg = self.gen_expr(index);
+                match col_ty {
+                    Type::List(elem_ty) => {
+                        let file_name_ptr = self.get_current_file_name_ptr();
+                        self.body.push_str(&format!(
+                            "    call void @n0_bounds_check(ptr {}, i64 {}, ptr {}, i64 {})\n",
+                            col_reg, idx_reg, file_name_ptr, line
+                        ));
+                        let data_ptr = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = call ptr @n0_c_load_string(ptr {}, i64 8)\n",
+                            data_ptr, col_reg
+                        ));
+                        let offset_reg = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = mul i64 {}, 8\n",
+                            offset_reg, idx_reg
+                        ));
+                        let elem_llvm_ty = self.llvm_type(&elem_ty);
+                        let val_reg = self.next_reg();
+                        if elem_llvm_ty == "double" {
+                            let temp_reg = self.next_reg();
+                            self.body.push_str(&format!(
+                                "    {} = call i64 @n0_c_load_int(ptr {}, i64 {})\n",
+                                temp_reg, data_ptr, offset_reg
+                            ));
+                            self.body.push_str(&format!(
+                                "    {} = bitcast i64 {} to double\n",
+                                val_reg, temp_reg
+                            ));
+                        } else if elem_llvm_ty == "ptr" {
+                            self.body.push_str(&format!(
+                                "    {} = call ptr @n0_c_load_string(ptr {}, i64 {})\n",
+                                val_reg, data_ptr, offset_reg
+                            ));
+                        } else {
+                            self.body.push_str(&format!(
+                                "    {} = call i64 @n0_c_load_int(ptr {}, i64 {})\n",
+                                val_reg, data_ptr, offset_reg
+                            ));
+                        }
+                        val_reg
+                    }
+                    Type::Map(_, _) => {
+                        let val_reg = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = call ptr @n0_map_get(ptr {}, ptr {})\n",
+                            val_reg, col_reg, idx_reg
+                        ));
+                        val_reg
+                    }
+                    _ => "null".to_string(),
+                }
+            }
         }
     }
 }

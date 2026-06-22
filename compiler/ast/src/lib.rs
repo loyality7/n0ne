@@ -205,6 +205,11 @@ pub enum Expr {
         return_type: Option<Type>,
         body: Block,
     },
+    Index {
+        expr: Box<Expr>,
+        index: Box<Expr>,
+        line: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
