@@ -137,6 +137,9 @@ impl LLVMGenerator {
                                     ast::TopLevelDecl::FnDecl(f) => {
                                         self.functions.insert(f.name.clone(), f.clone());
                                     }
+                                    ast::TopLevelDecl::TypeAliasDecl(a) => {
+                                        self.aliases.insert(a.name.clone(), a.target_type.clone());
+                                    }
                                     ast::TopLevelDecl::ConstDecl(c) => {
                                         let val_ty = self.infer_expr_type(&c.value);
                                         self.global_consts.insert(c.name.clone(), val_ty);

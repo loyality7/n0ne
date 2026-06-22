@@ -72,6 +72,10 @@ impl Formatter {
                 self.emit(&format!("use {}", u.path));
                 self.newline();
             }
+            TopLevelDecl::TypeAliasDecl(a) => {
+                self.emit(&format!("type {} = {}", a.name, self.type_to_str(&a.target_type)));
+                self.newline();
+            }
         }
     }
 

@@ -19,7 +19,7 @@ impl Parser {
         if self.check(TokenKind::Fn) {
             TopLevelDecl::FnDecl(self.parse_fn_decl())
         } else if self.check(TokenKind::Type) {
-            TopLevelDecl::TypeDecl(self.parse_type_decl())
+            self.parse_type_or_alias_decl()
         } else if self.check(TokenKind::Enum) {
             TopLevelDecl::EnumDecl(self.parse_enum_decl())
         } else if self.check(TokenKind::Task) {
@@ -154,7 +154,7 @@ impl Parser {
         }
     }
 
-    pub(crate) fn parse_type_decl(&mut self) -> TypeDecl {
+    pub(crate) fn parse_type_or_alias_decl(&mut self) -> TopLevelDecl {
         self.consume(TokenKind::Type);
         let name_tok = self.advance();
         let name = match &name_tok.kind {
@@ -164,34 +164,44 @@ impl Parser {
                 other, name_tok.line, name_tok.column
             ),
         };
-        self.consume(TokenKind::Newline);
-        self.consume(TokenKind::Indent);
 
-        let mut fields = Vec::new();
-        while !self.check(TokenKind::Dedent) && !self.is_at_end() {
+        if self.check(TokenKind::Eq) {
+            self.consume(TokenKind::Eq);
+            let target_type = self.parse_type();
             if self.check(TokenKind::Newline) {
-                self.advance();
-                continue;
+                self.consume(TokenKind::Newline);
             }
-            let f_tok = self.advance();
-            let f_name = match &f_tok.kind {
-                TokenKind::Ident(n) => n.clone(),
-                other => panic!(
-                    "Parser error: Expected field name, found '{}' at {}:{}",
-                    other, f_tok.line, f_tok.column
-                ),
-            };
-            self.consume(TokenKind::Colon);
-            let f_type = self.parse_type();
+            TopLevelDecl::TypeAliasDecl(TypeAliasDecl { name, target_type })
+        } else {
             self.consume(TokenKind::Newline);
-            fields.push(Field {
-                name: f_name,
-                type_ann: f_type,
-            });
-        }
-        self.consume(TokenKind::Dedent);
+            self.consume(TokenKind::Indent);
 
-        TypeDecl { name, fields }
+            let mut fields = Vec::new();
+            while !self.check(TokenKind::Dedent) && !self.is_at_end() {
+                if self.check(TokenKind::Newline) {
+                    self.advance();
+                    continue;
+                }
+                let f_tok = self.advance();
+                let f_name = match &f_tok.kind {
+                    TokenKind::Ident(n) => n.clone(),
+                    other => panic!(
+                        "Parser error: Expected field name, found '{}' at {}:{}",
+                        other, f_tok.line, f_tok.column
+                    ),
+                };
+                self.consume(TokenKind::Colon);
+                let f_type = self.parse_type();
+                self.consume(TokenKind::Newline);
+                fields.push(Field {
+                    name: f_name,
+                    type_ann: f_type,
+                });
+            }
+            self.consume(TokenKind::Dedent);
+
+            TopLevelDecl::TypeDecl(TypeDecl { name, fields })
+        }
     }
 
     pub(crate) fn parse_enum_decl(&mut self) -> EnumDecl {

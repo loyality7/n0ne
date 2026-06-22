@@ -10,6 +10,7 @@ pub struct Program {
 pub enum TopLevelDecl {
     FnDecl(FnDecl),
     TypeDecl(TypeDecl),
+    TypeAliasDecl(TypeAliasDecl),
     EnumDecl(EnumDecl),
     TaskDecl(TaskDecl),
     UseDecl(UseDecl),
@@ -42,6 +43,12 @@ pub struct Param {
 pub struct TypeDecl {
     pub name: String,
     pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeAliasDecl {
+    pub name: String,
+    pub target_type: Type,
 }
 
 #[derive(Debug, Clone, PartialEq)]

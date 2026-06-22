@@ -2,8 +2,26 @@ use ast::{Type, Expr, Literal};
 use crate::LLVMGenerator;
 
 impl LLVMGenerator {
-    pub(crate) fn llvm_type(&self, ty: &Type) -> String {
+    pub(crate) fn resolve_alias(&self, ty: &Type) -> Type {
         match ty {
+            Type::Basic(name) => {
+                if let Some(target) = self.aliases.get(name) {
+                    self.resolve_alias(target)
+                } else {
+                    ty.clone()
+                }
+            }
+            Type::List(inner) => Type::List(Box::new(self.resolve_alias(inner))),
+            Type::Map(k, v) => Type::Map(Box::new(self.resolve_alias(k)), Box::new(self.resolve_alias(v))),
+            Type::Result(inner) => Type::Result(Box::new(self.resolve_alias(inner))),
+            Type::Option(inner) => Type::Option(Box::new(self.resolve_alias(inner))),
+            Type::Tuple(types) => Type::Tuple(types.iter().map(|t| self.resolve_alias(t)).collect()),
+        }
+    }
+
+    pub(crate) fn llvm_type(&self, ty: &Type) -> String {
+        let res_ty = self.resolve_alias(ty);
+        match &res_ty {
             Type::Basic(name) => match name.as_str() {
                 "int" => "i64".to_string(),
                 "bool" => "i64".to_string(),
@@ -15,7 +33,12 @@ impl LLVMGenerator {
         }
     }
 
-    pub(crate) fn infer_expr_type(&self, expr: &Expr) -> Type {
+        pub(crate) fn infer_expr_type(&self, expr: &Expr) -> Type {
+        let ty = self.infer_expr_type_inner(expr);
+        self.resolve_alias(&ty)
+    }
+
+    fn infer_expr_type_inner(&self, expr: &Expr) -> Type {
         match expr {
             Expr::Ident(name) => {
                 if name == "none" {

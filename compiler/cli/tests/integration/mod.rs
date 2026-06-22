@@ -371,3 +371,14 @@ compile_error_test!(default_args_type_mismatch,
     contains: "E001",
     contains: "type mismatch",
 );
+
+// SECTION 16 — TYPE ALIASES
+test!(type_alias_basic,
+    source: "type ID = int\nfn get_id() -> ID\n    return 42\ntask main\n    id = get_id()\n    show(id.to_string())",
+    stdout: "42\n"
+);
+
+test!(type_alias_complex,
+    source: "type Dict = map[string, int]\nfn get_dict() -> Dict\n    m = {\"a\": 1}\n    return m\ntask main\n    d = get_dict()\n    show(d.get(\"a\").unwrap().to_string())",
+    stdout: "1\n"
+);

@@ -126,21 +126,7 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
     }
 }
 
-fn types_match(expected: &Type, actual: &Type) -> bool {
-    match (expected, actual) {
-        (Type::Basic(e), _) if e == "unknown" => true,
-        (_, Type::Basic(a)) if a == "unknown" => true,
-        (Type::Basic(e), Type::Basic(a)) => e == a,
-        (Type::List(e), Type::List(a)) => types_match(e, a),
-        (Type::Map(ek, ev), Type::Map(ak, av)) => types_match(ek, ak) && types_match(ev, av),
-        (Type::Result(e), Type::Result(a)) => types_match(e, a),
-        (Type::Option(e), Type::Option(a)) => types_match(e, a),
-        (Type::Tuple(e), Type::Tuple(a)) => {
-            e.len() == a.len() && e.iter().zip(a.iter()).all(|(et, at)| types_match(et, at))
-        }
-        _ => false,
-    }
-}
+
 
 pub struct TypeChecker {
     pub table: SymbolTable,
@@ -150,9 +136,45 @@ pub struct TypeChecker {
     pub import_stack: Vec<std::path::PathBuf>,
     pub current_file: Option<std::path::PathBuf>,
     inside_loop: usize,
+    pub aliases: std::collections::HashMap<String, Type>,
 }
 
 impl TypeChecker {
+    pub fn resolve_alias(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Basic(name) => {
+                if let Some(target) = self.aliases.get(name) {
+                    self.resolve_alias(target)
+                } else {
+                    ty.clone()
+                }
+            }
+            Type::List(inner) => Type::List(Box::new(self.resolve_alias(inner))),
+            Type::Map(k, v) => Type::Map(Box::new(self.resolve_alias(k)), Box::new(self.resolve_alias(v))),
+            Type::Result(inner) => Type::Result(Box::new(self.resolve_alias(inner))),
+            Type::Option(inner) => Type::Option(Box::new(self.resolve_alias(inner))),
+            Type::Tuple(types) => Type::Tuple(types.iter().map(|t| self.resolve_alias(t)).collect()),
+        }
+    }
+
+    pub fn types_match(&self, expected: &Type, actual: &Type) -> bool {
+        let expected_res = self.resolve_alias(expected);
+        let actual_res = self.resolve_alias(actual);
+        match (&expected_res, &actual_res) {
+            (Type::Basic(e), _) if e == "unknown" => true,
+            (_, Type::Basic(a)) if a == "unknown" => true,
+            (Type::Basic(e), Type::Basic(a)) => e == a,
+            (Type::List(e), Type::List(a)) => self.types_match(e, a),
+            (Type::Map(ek, ev), Type::Map(ak, av)) => self.types_match(ek, ak) && self.types_match(ev, av),
+            (Type::Result(e), Type::Result(a)) => self.types_match(e, a),
+            (Type::Option(e), Type::Option(a)) => self.types_match(e, a),
+            (Type::Tuple(e), Type::Tuple(a)) => {
+                e.len() == a.len() && e.iter().zip(a.iter()).all(|(et, at)| self.types_match(et, at))
+            }
+            _ => false,
+        }
+    }
+
     pub fn new() -> Self {
         let mut tc = Self {
             table: SymbolTable::new(),
@@ -162,6 +184,7 @@ impl TypeChecker {
             import_stack: Vec::new(),
             current_file: None,
             inside_loop: 0,
+            aliases: std::collections::HashMap::new(),
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
@@ -259,6 +282,9 @@ impl TypeChecker {
                         params: vec![], min_args: 0, ret_type: Some(Type::Basic(t.name.clone())),
                     };
                     self.table.insert_global(t.name.clone(), info);
+                }
+                TopLevelDecl::TypeAliasDecl(a) => {
+                    self.aliases.insert(a.name.clone(), a.target_type.clone());
                 }
                 TopLevelDecl::EnumDecl(e) => {
                     for var in &e.variants {
@@ -457,7 +483,7 @@ impl TypeChecker {
         for param in &decl.params {
             if let Some(default_val) = &param.default_value {
                 let default_ty = self.infer_expr(default_val);
-                if !types_match(&param.type_ann, &default_ty) {
+                if !self.types_match(&param.type_ann, &default_ty) {
                     self.errors.push(SemanticError {
                         line: 0,
                         column: 0,
@@ -555,7 +581,7 @@ impl TypeChecker {
                                             self.table.insert(name.clone(), SymbolInfo::Variable(field_ty.clone()));
                                         } else {
                                             let existing_ty = self.infer_expr(t_expr);
-                                            if !types_match(&existing_ty, field_ty) {
+                                            if !self.types_match(&existing_ty, field_ty) {
                                                 self.errors.push(SemanticError {
                                                     line: 0,
                                                     column: 0,
@@ -570,7 +596,7 @@ impl TypeChecker {
                                         }
                                     } else {
                                         let existing_ty = self.infer_expr(t_expr);
-                                        if !types_match(&existing_ty, field_ty) {
+                                        if !self.types_match(&existing_ty, field_ty) {
                                             self.errors.push(SemanticError {
                                                 line: 0,
                                                 column: 0,
@@ -612,7 +638,7 @@ impl TypeChecker {
                 if lhs_type != Type::Basic("unknown".to_string())
                     && rhs_type != Type::Basic("unknown".to_string())
                 {
-                    if !types_match(&lhs_type, &rhs_type) {
+                    if !self.types_match(&lhs_type, &rhs_type) {
                         self.errors.push(SemanticError {
                             line: 0,
                             column: 0,
@@ -759,7 +785,7 @@ impl TypeChecker {
                                 Literal::String(_) => Type::Basic("string".to_string()),
                                 Literal::Bool(_) => Type::Basic("bool".to_string()),
                             };
-                            if !types_match(&arm_type, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
+                            if !self.types_match(&arm_type, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
                                 self.errors.push(SemanticError {
                                     line: 0,
                                     column: 0,
@@ -776,7 +802,7 @@ impl TypeChecker {
                         MatchArm::Variant { variant_name, bindings } => {
                             if let Some(SymbolInfo::Function { params, min_args, ret_type }) = self.table.lookup(variant_name).cloned() {
                                 if let Some(rt) = &ret_type {
-                                    if !types_match(rt, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
+                                    if !self.types_match(rt, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
                                         self.errors.push(SemanticError {
                                             line: 0,
                                             column: 0,
@@ -835,7 +861,7 @@ impl TypeChecker {
                 };
 
                 if let Some(expected) = &self.current_fn_return_type {
-                    if !types_match(expected, &actual) && actual != Type::Basic("unknown".to_string()) {
+                    if !self.types_match(expected, &actual) && actual != Type::Basic("unknown".to_string()) {
                         self.errors.push(SemanticError {
                             line: 0,
                             column: 0,
@@ -946,7 +972,7 @@ impl TypeChecker {
                             for (i, arg) in args.iter().enumerate() {
                                 let arg_type = self.infer_expr(arg);
                                 let expected_type = &params[i];
-                                 if !types_match(expected_type, &arg_type)
+                                 if !self.types_match(expected_type, &arg_type)
                                     && arg_type != Type::Basic("unknown".to_string())
                                     && expected_type != &Type::Basic("unknown".to_string())
                                 {
@@ -1004,7 +1030,7 @@ impl TypeChecker {
                                 for (i, arg) in args.iter().enumerate() {
                                     let arg_type = self.infer_expr(arg);
                                     let expected_type = &params[i];
-                                    if !types_match(expected_type, &arg_type)
+                                    if !self.types_match(expected_type, &arg_type)
                                         && arg_type != Type::Basic("unknown".to_string())
                                         && expected_type != &Type::Basic("unknown".to_string())
                                     {

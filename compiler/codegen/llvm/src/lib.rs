@@ -21,6 +21,7 @@ pub struct LLVMGenerator {
     pub(crate) string_constants: Vec<(String, String, usize)>, // (name, escaped_val, len)
     pub(crate) variables: HashMap<String, (String, Type)>,    // name -> (alloca_reg, type)
     pub(crate) structs: HashMap<String, TypeDecl>,
+    pub(crate) aliases: HashMap<String, ast::Type>,
     pub(crate) enums: HashMap<String, ast::EnumDecl>,
     pub(crate) current_ret_type: String,
     pub(crate) functions: HashMap<String, ast::FnDecl>,
@@ -41,6 +42,7 @@ impl LLVMGenerator {
             string_constants: Vec::new(),
             variables: HashMap::new(),
             structs: HashMap::new(),
+            aliases: HashMap::new(),
             enums: HashMap::new(),
             current_ret_type: "void".to_string(),
             functions: HashMap::new(),
@@ -63,6 +65,9 @@ impl LLVMGenerator {
                 }
                 ast::TopLevelDecl::FnDecl(f) => {
                     self.functions.insert(f.name.clone(), f.clone());
+                }
+                ast::TopLevelDecl::TypeAliasDecl(a) => {
+                    self.aliases.insert(a.name.clone(), a.target_type.clone());
                 }
                 ast::TopLevelDecl::ConstDecl(c) => {
                     let val_ty = self.infer_expr_type(&c.value);
