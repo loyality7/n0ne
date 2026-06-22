@@ -19,6 +19,8 @@ mod tests {
                 params: vec![Param {
                     name: "name".to_string(),
                     type_ann: Type::Basic("string".to_string())
+                ,
+                    default_value: None,
                 }],
                 return_type: Some(Type::Basic("string".to_string())),
                 body: Block {
@@ -46,6 +48,8 @@ mod tests {
                 params: vec![Param {
                     name: "name".to_string(),
                     type_ann: Type::Basic("string".to_string())
+                ,
+                    default_value: None,
                 }],
                 return_type: None,
                 body: Block {
