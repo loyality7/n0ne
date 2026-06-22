@@ -379,6 +379,8 @@ void* n0_str_to_float(char* s) {
 }
 
 // List Methods
+
+
 int64_t n0_list_len(void* list) {
     if (!list) return 0;
     return *(int64_t*)((char*)list + 16);
@@ -1091,6 +1093,86 @@ void* n0_json_decode(const char* s) {
 
 char* n0_http_get(const char* url) {
     return "{}";
+}
+
+
+void* n0_list_new() {
+    int64_t* list = malloc(24);
+    if (list) {
+        list[0] = 4; // cap
+        list[1] = (int64_t)malloc(4 * 8); // data
+        if (list[1]) memset((void*)list[1], 0, 4 * 8);
+        list[2] = 0; // len
+    }
+    return list;
+}
+
+void* n0_list_map(void* list, void* (*f)(int64_t)) {
+    if (!list) return 0;
+    int64_t len = *(int64_t*)((char*)list + 16);
+    int64_t* data = *(int64_t**)((char*)list + 8);
+    void* new_list = n0_list_new();
+    for (int i = 0; i < len; i++) {
+        void* res = f(data[i]);
+        n0_list_push(new_list, (int64_t)res);
+    }
+    return new_list;
+}
+
+void* n0_list_filter(void* list, int64_t (*f)(int64_t)) {
+    if (!list) return 0;
+    int64_t len = *(int64_t*)((char*)list + 16);
+    int64_t* data = *(int64_t**)((char*)list + 8);
+    void* new_list = n0_list_new();
+    for (int i = 0; i < len; i++) {
+        if (f(data[i])) {
+            n0_list_push(new_list, data[i]);
+        }
+    }
+    return new_list;
+}
+
+int64_t n0_list_reduce(void* list, int64_t init, int64_t (*f)(int64_t, int64_t)) {
+    if (!list) return init;
+    int64_t len = *(int64_t*)((char*)list + 16);
+    int64_t* data = *(int64_t**)((char*)list + 8);
+    int64_t acc = init;
+    for (int i = 0; i < len; i++) {
+        acc = f(acc, data[i]);
+    }
+    return acc;
+}
+
+void* n0_list_find(void* list, int64_t (*f)(int64_t)) {
+    if (!list) return n0_make_none();
+    int64_t len = *(int64_t*)((char*)list + 16);
+    int64_t* data = *(int64_t**)((char*)list + 8);
+    for (int i = 0; i < len; i++) {
+        if (f(data[i])) {
+            return n0_make_some(data[i]);
+        }
+    }
+    return n0_make_none();
+}
+
+int64_t n0_list_any(void* list, int64_t (*f)(int64_t)) {
+    if (!list) return 0;
+    int64_t len = *(int64_t*)((char*)list + 16);
+    int64_t* data = *(int64_t**)((char*)list + 8);
+    for (int i = 0; i < len; i++) {
+        if (f(data[i])) return 1;
+    }
+    return 0;
+}
+
+int64_t n0_list_all(void* list, int64_t (*f)(int64_t)) {
+    if (!list) return 1;
+    int64_t len = *(int64_t*)((char*)list + 16);
+    int64_t* data = *(int64_t**)((char*)list + 8);
+    for (int i = 0; i < len; i++) {
+        if (!f(data[i])) return 0;
+    }
+    return 1;
 }
 
 char* n0_http_post(const char* url, const char* body) {

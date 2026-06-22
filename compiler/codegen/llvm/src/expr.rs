@@ -850,6 +850,27 @@ impl LLVMGenerator {
                                     };
                                     ret_llvm_ty = "ptr".to_string();
                                 }
+                                                                "map" => {
+                                    mapped_fn_name = "n0_list_map".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "filter" => {
+                                    mapped_fn_name = "n0_list_filter".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "reduce" => {
+                                    mapped_fn_name = "n0_list_reduce".to_string();
+                                    // return type depends, let's say it's i64 for now
+                                    ret_llvm_ty = "i64".to_string();
+                                }
+                                "find" => {
+                                    mapped_fn_name = "n0_list_find".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "any" | "all" => {
+                                    mapped_fn_name = if method_name == "any" { "n0_list_any".to_string() } else { "n0_list_all".to_string() };
+                                    ret_llvm_ty = "i64".to_string();
+                                }
                                 "contains" => {
                                     mapped_fn_name = if self.llvm_type(inner) == "ptr" {
                                         "n0_list_contains_str".to_string()
@@ -1175,6 +1196,65 @@ impl LLVMGenerator {
                     ));
                 }
                 val_reg
+            }
+            Expr::AnonymousFn { params, return_type, body } => {
+                // Generate a unique name
+                let fn_name = format!("__anon_fn_{}", self.label_counter);
+                self.label_counter += 1;
+                
+                let ret_ty = return_type.clone().unwrap_or(Type::Basic("unknown".to_string()));
+                let llvm_ret_ty = self.llvm_type(&ret_ty);
+                
+                let mut param_types = Vec::new();
+                for p in params {
+                    param_types.push(format!("{} %{}", self.llvm_type(&p.type_ann), p.name));
+                }
+                let param_str = param_types.join(", ");
+                
+                let anon_fn = format!("define {} @{}({}) {{
+entry:
+", llvm_ret_ty, fn_name, param_str);
+                
+                // Save state
+                let saved_body = std::mem::replace(&mut self.body, anon_fn);
+                let saved_vars = self.variables.clone();
+                let saved_ret = self.current_ret_type.clone();
+                
+                self.current_ret_type = llvm_ret_ty.clone();
+                
+                for p in params {
+                    let p_llvm_ty = self.llvm_type(&p.type_ann);
+                    let alloca_reg = self.next_reg();
+                    self.body.push_str(&format!("    {} = alloca {}, align 8
+", alloca_reg, p_llvm_ty));
+                    self.body.push_str(&format!("    store {} %{}, ptr {}, align 8
+", p_llvm_ty, p.name, alloca_reg));
+                    self.variables.insert(p.name.clone(), (alloca_reg, p.type_ann.clone()));
+                }
+                
+                for stmt in &body.stmts {
+                    self.gen_stmt(stmt);
+                }
+                
+                if llvm_ret_ty == "void" {
+                    self.body.push_str("    ret void
+");
+                } else if !self.body.contains("ret ") {
+                    self.body.push_str(&format!("    ret {} 0
+", llvm_ret_ty)); // Fallback
+                }
+                
+                self.body.push_str("}
+
+");
+                self.globals.push_str(&self.body);
+                
+                // Restore state
+                self.body = saved_body;
+                self.variables = saved_vars;
+                self.current_ret_type = saved_ret;
+                
+                format!("@{}", fn_name)
             }
             Expr::Tuple(items) => {
                 let size = std::cmp::max(8, items.len() as i64 * 8);

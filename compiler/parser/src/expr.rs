@@ -44,6 +44,24 @@ impl Parser {
             TokenKind::Float(f) => Expr::Literal(Literal::Float(*f)),
             TokenKind::String(s) => Expr::Literal(Literal::String(s.clone())),
             TokenKind::Bool(b) => Expr::Literal(Literal::Bool(*b)),
+            TokenKind::Fn => {
+                let params = self.parse_params();
+                let return_type = self.parse_return_type();
+                let body = if self.check(TokenKind::Newline) {
+                    self.consume(TokenKind::Newline);
+                    self.parse_block()
+                } else {
+                    let expr = self.parse_expr_precedence(Precedence::None);
+                    Block {
+                        stmts: vec![Stmt::Return(Some(expr))],
+                    }
+                };
+                Expr::AnonymousFn {
+                    params,
+                    return_type,
+                    body,
+                }
+            }
             TokenKind::LParen => {
                 if self.check(TokenKind::RParen) {
                     self.advance(); // consume RParen

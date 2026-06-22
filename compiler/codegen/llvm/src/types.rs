@@ -16,6 +16,7 @@ impl LLVMGenerator {
             Type::Result(inner) => Type::Result(Box::new(self.resolve_alias(inner))),
             Type::Option(inner) => Type::Option(Box::new(self.resolve_alias(inner))),
             Type::Tuple(types) => Type::Tuple(types.iter().map(|t| self.resolve_alias(t)).collect()),
+            Type::Function(params, ret) => Type::Function(params.iter().map(|t| self.resolve_alias(t)).collect(), Box::new(self.resolve_alias(ret))),
         }
     }
 
@@ -40,6 +41,10 @@ impl LLVMGenerator {
 
     fn infer_expr_type_inner(&self, expr: &Expr) -> Type {
         match expr {
+            Expr::AnonymousFn { params, return_type, .. } => {
+                let param_types = params.iter().map(|p| p.type_ann.clone()).collect();
+                Type::Function(param_types, Box::new(return_type.clone().unwrap_or(Type::Basic("unknown".to_string()))))
+            }
             Expr::Ident(name) => {
                 if name == "none" {
                     return Type::Option(Box::new(Type::Basic("unknown".to_string())));
@@ -61,7 +66,7 @@ impl LLVMGenerator {
                 Literal::String(_) => Type::Basic("string".to_string()),
                 Literal::Bool(_) => Type::Basic("bool".to_string()),
             },
-            Expr::CallExpr { callee, .. } => {
+            Expr::CallExpr { callee, args } => {
                 if let Expr::Ident(name) = &**callee {
                     if let Some((enum_decl, _, _)) = self.find_variant(name) {
                         return Type::Basic(enum_decl.name.clone());
@@ -170,6 +175,23 @@ impl LLVMGenerator {
                                 "push" => return Type::Basic("void".to_string()),
                                 "pop" | "first" | "last" => return Type::Option(inner.clone()),
                                 "contains" => return Type::Basic("bool".to_string()),
+                                "map" => {
+                                    if let Some(arg) = args.get(0) {
+                                        if let Type::Function(_, ret) = self.infer_expr_type(arg) {
+                                            return Type::List(ret.clone());
+                                        }
+                                    }
+                                    return Type::List(Box::new(Type::Basic("unknown".to_string())));
+                                }
+                                "filter" => return Type::List(inner.clone()),
+                                "reduce" => {
+                                    if let Some(arg) = args.get(0) {
+                                        return self.infer_expr_type(arg);
+                                    }
+                                    return Type::Basic("unknown".to_string());
+                                }
+                                "find" => return Type::Option(inner.clone()),
+                                "any" | "all" => return Type::Basic("bool".to_string()),
                                 _ => {}
                             }
                         }

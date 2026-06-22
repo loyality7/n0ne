@@ -154,6 +154,7 @@ impl TypeChecker {
             Type::Result(inner) => Type::Result(Box::new(self.resolve_alias(inner))),
             Type::Option(inner) => Type::Option(Box::new(self.resolve_alias(inner))),
             Type::Tuple(types) => Type::Tuple(types.iter().map(|t| self.resolve_alias(t)).collect()),
+            Type::Function(params, ret) => Type::Function(params.iter().map(|t| self.resolve_alias(t)).collect(), Box::new(self.resolve_alias(ret))),
         }
     }
 
@@ -170,6 +171,9 @@ impl TypeChecker {
             (Type::Option(e), Type::Option(a)) => self.types_match(e, a),
             (Type::Tuple(e), Type::Tuple(a)) => {
                 e.len() == a.len() && e.iter().zip(a.iter()).all(|(et, at)| self.types_match(et, at))
+            }
+            (Type::Function(ep, er), Type::Function(ap, ar)) => {
+                ep.len() == ap.len() && ep.iter().zip(ap.iter()).all(|(et, at)| self.types_match(et, at)) && self.types_match(er, ar)
             }
             _ => false,
         }
@@ -1115,6 +1119,21 @@ impl TypeChecker {
                                 "push" => return Type::Basic("void".to_string()),
                                 "pop" | "first" | "last" => return Type::Option(inner.clone()),
                                 "contains" => return Type::Basic("bool".to_string()),
+                                "map" => {
+                                    if let Some(Type::Function(_, ret)) = arg_types.get(0) {
+                                        return Type::List(ret.clone());
+                                    }
+                                    return Type::List(Box::new(Type::Basic("unknown".to_string())));
+                                }
+                                "filter" => return Type::List(inner.clone()),
+                                "reduce" => {
+                                    if let Some(initial_ty) = arg_types.get(0) {
+                                        return initial_ty.clone();
+                                    }
+                                    return Type::Basic("unknown".to_string());
+                                }
+                                "find" => return Type::Option(inner.clone()),
+                                "any" | "all" => return Type::Basic("bool".to_string()),
                                 _ => {}
                             }
                         }
@@ -1175,6 +1194,24 @@ impl TypeChecker {
             Expr::Tuple(items) => {
                 let types = items.iter().map(|item| self.infer_expr(item)).collect();
                 Type::Tuple(types)
+            }
+            Expr::AnonymousFn { params, return_type, body } => {
+                let param_types = params.iter().map(|p| p.type_ann.clone()).collect();
+                let prev_ret = self.current_fn_return_type.clone();
+                self.current_fn_return_type = return_type.clone();
+                
+                self.table.scopes.push(std::collections::HashMap::new());
+                for p in params {
+                    self.table.insert(p.name.clone(), SymbolInfo::Variable(p.type_ann.clone()));
+                }
+                
+                for stmt in &body.stmts {
+                    self.check_stmt(stmt);
+                }
+                
+                self.table.scopes.pop();
+                self.current_fn_return_type = prev_ret;
+                Type::Function(param_types, Box::new(return_type.clone().unwrap_or(Type::Basic("unknown".to_string()))))
             }
         }
     }

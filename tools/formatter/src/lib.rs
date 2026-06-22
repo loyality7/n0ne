@@ -86,6 +86,10 @@ impl Formatter {
             Type::Map(k, v) => format!("map[{}, {}]", self.type_to_str(k), self.type_to_str(v)),
             Type::Result(inner) => format!("result[{}]", self.type_to_str(inner)),
             Type::Option(inner) => format!("option[{}]", self.type_to_str(inner)),
+            Type::Function(params, ret) => {
+                let ps = params.iter().map(|p| self.type_to_str(p)).collect::<Vec<_>>().join(", ");
+                format!("fn({}) -> {}", ps, self.type_to_str(ret))
+            }
             Type::Tuple(types) => {
                 let formatted: Vec<String> = types.iter().map(|t| self.type_to_str(t)).collect();
                 format!("({})", formatted.join(", "))
@@ -441,6 +445,34 @@ impl Formatter {
                     }
                     self.out.push(')');
                 }
+            }
+            Expr::AnonymousFn { params, return_type, body } => {
+                self.out.push_str("fn(");
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 { self.out.push_str(", "); }
+                    self.out.push_str(&p.name);
+                    let type_str = self.type_to_str(&p.type_ann);
+                    if type_str != "unknown" {
+                        self.out.push_str(&format!(": {}", type_str));
+                    }
+                }
+                self.out.push_str(")");
+                if let Some(rt) = return_type {
+                    self.out.push_str(&format!(" -> {}", self.type_to_str(rt)));
+                }
+                self.out.push(' ');
+                if body.stmts.len() == 1 {
+                    if let ast::Stmt::Return(Some(expr)) = &body.stmts[0] {
+                        self.format_expr(expr);
+                        return;
+                    }
+                }
+                self.newline();
+                self.indent_level += 1;
+                for stmt in &body.stmts {
+                    self.format_stmt(stmt);
+                }
+                self.indent_level -= 1;
             }
         }
     }

@@ -99,7 +99,22 @@ impl Parser {
             ),
         };
 
-        // Parse parameters
+        let params = self.parse_params();
+        let return_type = self.parse_return_type();
+
+        self.consume(TokenKind::Newline);
+        let body = self.parse_block();
+
+        FnDecl {
+            name,
+            receiver,
+            params,
+            return_type,
+            body,
+        }
+    }
+
+    pub(crate) fn parse_params(&mut self) -> Vec<Param> {
         self.consume(TokenKind::LParen);
         let mut params = Vec::new();
         if !self.check(TokenKind::RParen) {
@@ -112,8 +127,12 @@ impl Parser {
                         other, p_tok.line, p_tok.column
                     ),
                 };
-                self.consume(TokenKind::Colon);
-                let p_type = self.parse_type();
+                let p_type = if self.check(TokenKind::Colon) {
+                    self.consume(TokenKind::Colon);
+                    self.parse_type()
+                } else {
+                    Type::Basic("unknown".to_string())
+                };
                 let default_value = if self.check(TokenKind::Eq) {
                     self.consume(TokenKind::Eq);
                     Some(self.parse_expr())
@@ -133,24 +152,15 @@ impl Parser {
             }
         }
         self.consume(TokenKind::RParen);
+        params
+    }
 
-        // Parse return type -> ReturnType
-        let return_type = if self.check(TokenKind::Arrow) {
+    pub(crate) fn parse_return_type(&mut self) -> Option<Type> {
+        if self.check(TokenKind::Arrow) {
             self.advance(); // consume "->"
             Some(self.parse_type())
         } else {
             None
-        };
-
-        self.consume(TokenKind::Newline);
-        let body = self.parse_block();
-
-        FnDecl {
-            name,
-            receiver,
-            params,
-            return_type,
-            body,
         }
     }
 

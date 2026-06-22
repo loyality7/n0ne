@@ -382,3 +382,32 @@ test!(type_alias_complex,
     source: "type Dict = map[string, int]\nfn get_dict() -> Dict\n    m = {\"a\": 1}\n    return m\ntask main\n    d = get_dict()\n    show(d.get(\"a\").unwrap().to_string())",
     stdout: "1\n"
 );
+
+test!(
+    list_hofs,
+    source: "
+task main
+    nums = [1, 2, 3, 4, 5]
+    
+    doubled = nums.map(fn(x: int) -> int x * 2)
+    show(doubled.len())
+    show(doubled.first().unwrap())
+    
+    evens = nums.filter(fn(x: int) -> bool x % 2 == 0)
+    show(evens.len())
+    show(evens.first().unwrap())
+    
+    sum = nums.reduce(0, fn(acc: int, x: int) -> int acc + x)
+    show(sum)
+    
+    found = nums.find(fn(x: int) -> bool x == 3)
+    show(found.unwrap())
+    
+    has_any = nums.any(fn(x: int) -> bool x > 4)
+    show(has_any)
+    
+    all_positive = nums.all(fn(x: int) -> bool x > 0)
+    show(all_positive)
+",
+    stdout: "5\n2\n2\n2\n15\n3\ntrue\ntrue\n"
+);

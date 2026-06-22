@@ -103,6 +103,7 @@ pub enum Type {
     Result(Box<Type>),         // result[T]
     Option(Box<Type>),         // option[T]
     Tuple(Vec<Type>),          // (T1, T2, ...)
+    Function(Vec<Type>, Box<Type>), // fn(T1, T2) -> R
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -194,6 +195,11 @@ pub enum Expr {
     },
     TryExpr(Box<Expr>),
     Tuple(Vec<Expr>),          // (e1, e2, ...)
+    AnonymousFn {
+        params: Vec<Param>,
+        return_type: Option<Type>,
+        body: Block,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

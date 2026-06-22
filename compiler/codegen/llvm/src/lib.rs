@@ -135,6 +135,19 @@ impl LLVMGenerator {
 
         // List primitive methods
         self.globals.push_str("declare i64 @n0_list_len(ptr)\n");
+        self.globals.push_str("declare ptr @n0_list_map(ptr, ptr)
+");
+        self.globals.push_str("declare ptr @n0_list_filter(ptr, ptr)
+");
+        self.globals.push_str("declare i64 @n0_list_reduce(ptr, i64, ptr)
+");
+        self.globals.push_str("declare ptr @n0_list_find(ptr, ptr)
+");
+        self.globals.push_str("declare i64 @n0_list_any(ptr, ptr)
+");
+        self.globals.push_str("declare i64 @n0_list_all(ptr, ptr)
+");
+
         self.globals.push_str("declare void @n0_list_push(ptr, i64)\n");
         self.globals.push_str("declare ptr @n0_list_pop(ptr)\n");
         self.globals.push_str("declare i64 @n0_list_contains_int(ptr, i64)\n");
