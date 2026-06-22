@@ -235,3 +235,22 @@ pub fn cleanup(path: &str) {
         }
     }
 }
+
+pub fn compile_get_warnings(source: &str) -> Vec<String> {
+    let source = wrap_source_if_needed(source);
+    let (temp_dir, src_path, _name) = get_temp_paths("warning");
+    fs::write(&src_path, &source).unwrap();
+
+    let cli_path = env!("CARGO_BIN_EXE_n0ne");
+    let output = Command::new(cli_path)
+        .arg("build")
+        .arg(&src_path)
+        .current_dir(&temp_dir)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    stderr.lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect()
+}

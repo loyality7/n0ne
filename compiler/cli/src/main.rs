@@ -165,6 +165,18 @@ fn build(file_path: &Path, debug: bool) -> PathBuf {
     let mut checker = sema::TypeChecker::new();
     checker.check_program(&ast);
 
+    for warn in &checker.warnings {
+        eprintln!(
+            "warning[{}]: {}\n  --> {}:{}:{}\n  hint: {}",
+            warn.code,
+            warn.message,
+            file_path.display(),
+            warn.line,
+            warn.column,
+            warn.hint
+        );
+    }
+
     if !checker.errors.is_empty() {
         for err in &checker.errors {
             eprintln!(

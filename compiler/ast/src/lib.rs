@@ -87,6 +87,7 @@ pub struct UseDecl {
     pub path: String,
     pub kind: UseKind,
     pub items: Option<Vec<String>>,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -15,7 +15,10 @@ pub struct SemanticError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolInfo {
-    Variable(Type),
+    Variable {
+        ty: Type,
+        used: bool,
+    },
     Function {
         params: Vec<Type>,
         min_args: usize,
@@ -24,7 +27,7 @@ pub enum SymbolInfo {
 }
 
 pub struct SymbolTable {
-    scopes: Vec<HashMap<String, SymbolInfo>>,
+    pub scopes: Vec<HashMap<String, SymbolInfo>>,
 }
 
 impl SymbolTable {
@@ -38,8 +41,8 @@ impl SymbolTable {
         self.scopes.push(HashMap::new());
     }
 
-    pub fn exit_scope(&mut self) {
-        self.scopes.pop();
+    pub fn exit_scope(&mut self) -> Option<HashMap<String, SymbolInfo>> {
+        self.scopes.pop()
     }
 
     pub fn insert(&mut self, name: String, info: SymbolInfo) -> bool {
@@ -61,9 +64,12 @@ impl SymbolTable {
         None
     }
 
-    pub fn update(&mut self, name: &str, info: SymbolInfo) -> bool {
+    pub fn update(&mut self, name: &str, mut info: SymbolInfo) -> bool {
         for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(name) {
+            if let Some(existing) = scope.get_mut(name) {
+                if let (SymbolInfo::Variable { used, .. }, SymbolInfo::Variable { used: new_used, .. }) = (existing, &mut info) {
+                    *new_used = *used;
+                }
                 scope.insert(name.to_string(), info);
                 return true;
             }
@@ -79,6 +85,18 @@ impl SymbolTable {
             global_scope.insert(name, info);
             true
         }
+    }
+
+    pub fn mark_used(&mut self, name: &str) -> Option<usize> {
+        for (depth, scope) in self.scopes.iter_mut().enumerate().rev() {
+            if let Some(info) = scope.get_mut(name) {
+                if let SymbolInfo::Variable { used, .. } = info {
+                    *used = true;
+                }
+                return Some(depth);
+            }
+        }
+        None
     }
 }
 
@@ -128,15 +146,25 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
 
 
 
+#[derive(Debug, Clone)]
+pub struct ImportTrack {
+    pub name: String,
+    pub path: String,
+    pub used: bool,
+    pub line: usize,
+}
+
 pub struct TypeChecker {
     pub table: SymbolTable,
     pub errors: Vec<SemanticError>,
+    pub warnings: Vec<SemanticError>,
     current_fn_return_type: Option<Type>,
     pub imported_modules: HashMap<String, HashMap<String, SymbolInfo>>,
     pub import_stack: Vec<std::path::PathBuf>,
     pub current_file: Option<std::path::PathBuf>,
     inside_loop: usize,
     pub aliases: std::collections::HashMap<String, Type>,
+    pub imports: Vec<ImportTrack>,
 }
 
 impl TypeChecker {
@@ -179,16 +207,52 @@ impl TypeChecker {
         }
     }
 
+    fn exit_scope(&mut self) {
+        if let Some(scope) = self.table.exit_scope() {
+            for (name, info) in scope {
+                if let SymbolInfo::Variable { used, .. } = info {
+                    if !used && name != "self" && !name.starts_with('_') {
+                        self.warnings.push(SemanticError {
+                            line: 0,
+                            column: 0,
+                            code: "W001".to_string(),
+                            message: format!("'{}' declared but never used", name),
+                            hint: "".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn mark_used(&mut self, name: &str) {
+        if let Some(depth) = self.table.mark_used(name) {
+            if depth == 0 {
+                self.mark_import_used(name);
+            }
+        } else {
+            self.mark_import_used(name);
+        }
+    }
+
+    pub fn mark_import_used(&mut self, name: &str) {
+        if let Some(imp) = self.imports.iter_mut().find(|imp| imp.name == name) {
+            imp.used = true;
+        }
+    }
+
     pub fn new() -> Self {
         let mut tc = Self {
             table: SymbolTable::new(),
             errors: Vec::new(),
+            warnings: Vec::new(),
             current_fn_return_type: None,
             imported_modules: HashMap::new(),
             import_stack: Vec::new(),
             current_file: None,
             inside_loop: 0,
             aliases: std::collections::HashMap::new(),
+            imports: Vec::new(),
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
@@ -324,6 +388,19 @@ impl TypeChecker {
                 _ => {}
             }
         }
+
+        // Pass 3: Check for unused imports
+        for imp in &self.imports {
+            if !imp.used {
+                self.warnings.push(SemanticError {
+                    line: imp.line,
+                    column: 0,
+                    code: "W002".to_string(),
+                    message: format!("'{}' imported but never used", imp.name),
+                    hint: "".to_string(),
+                });
+            }
+        }
     }
 
     fn get_module_name(&self, path: &str) -> String {
@@ -356,6 +433,23 @@ impl TypeChecker {
 
     fn check_use_decl(&mut self, u: &UseDecl) {
         let module_name = self.get_module_name(&u.path);
+        if let Some(items) = &u.items {
+            for item in items {
+                self.imports.push(ImportTrack {
+                    name: item.clone(),
+                    path: u.path.clone(),
+                    used: false,
+                    line: u.line,
+                });
+            }
+        } else {
+            self.imports.push(ImportTrack {
+                name: module_name.clone(),
+                path: u.path.clone(),
+                used: false,
+                line: u.line,
+            });
+        }
         match u.kind {
             UseKind::Stdlib => {
                 if let Some(symbols) = get_stdlib_symbols(&u.path) {
@@ -463,6 +557,7 @@ impl TypeChecker {
                 
                 self.imported_modules.insert(module_name, mod_symbols);
                 self.errors.extend(sub_checker.errors);
+                self.warnings.extend(sub_checker.warnings);
             }
             UseKind::Package => {
                 self.errors.push(SemanticError {
@@ -483,7 +578,10 @@ impl TypeChecker {
         if let Some(recv) = &decl.receiver {
             self.table.insert(
                 "self".to_string(),
-                SymbolInfo::Variable(Type::Basic(recv.type_name.clone())),
+                SymbolInfo::Variable {
+                    ty: Type::Basic(recv.type_name.clone()),
+                    used: false,
+                },
             );
         }
 
@@ -505,7 +603,10 @@ impl TypeChecker {
             }
             self.table.insert(
                 param.name.clone(),
-                SymbolInfo::Variable(param.type_ann.clone()),
+                SymbolInfo::Variable {
+                    ty: param.type_ann.clone(),
+                    used: false,
+                },
             );
         }
 
@@ -524,7 +625,7 @@ impl TypeChecker {
             }
         }
 
-        self.table.exit_scope();
+        self.exit_scope();
         self.current_fn_return_type = None;
     }
 
@@ -532,12 +633,12 @@ impl TypeChecker {
         self.current_fn_return_type = None;
         self.table.enter_scope();
         self.check_block(&decl.body);
-        self.table.exit_scope();
+        self.exit_scope();
     }
 
     fn check_const_decl(&mut self, decl: &ConstDecl) {
         let t = self.infer_expr(&decl.value);
-        self.table.insert_global(decl.name.clone(), SymbolInfo::Variable(t));
+        self.table.insert_global(decl.name.clone(), SymbolInfo::Variable { ty: t, used: false });
     }
 
     fn check_block(&mut self, block: &Block) {
@@ -585,7 +686,7 @@ impl TypeChecker {
                                     let field_ty = &types[i];
                                     if let Expr::Ident(name) = t_expr {
                                         if self.table.lookup(name).is_none() {
-                                            self.table.insert(name.clone(), SymbolInfo::Variable(field_ty.clone()));
+                                            self.table.insert(name.clone(), SymbolInfo::Variable { ty: field_ty.clone(), used: false });
                                         } else {
                                             let existing_ty = self.infer_expr(t_expr);
                                             if !self.types_match(&existing_ty, field_ty) {
@@ -634,7 +735,7 @@ impl TypeChecker {
                         return;
                     } else if let Expr::Ident(name) = target {
                         if self.table.lookup(name).is_none() {
-                            self.table.insert(name.clone(), SymbolInfo::Variable(rhs_type.clone()));
+                            self.table.insert(name.clone(), SymbolInfo::Variable { ty: rhs_type.clone(), used: false });
                             return;
                         }
                     }
@@ -662,7 +763,7 @@ impl TypeChecker {
             }
             Stmt::ConstDecl(c) => {
                 let t = self.infer_expr(&c.value);
-                self.table.insert(c.name.clone(), SymbolInfo::Variable(t));
+                self.table.insert(c.name.clone(), SymbolInfo::Variable { ty: t, used: false });
             }
             Stmt::If {
                 cond,
@@ -688,7 +789,7 @@ impl TypeChecker {
 
                 self.table.enter_scope();
                 self.check_block(then_branch);
-                self.table.exit_scope();
+                self.exit_scope();
 
                 for (e_cond, e_block) in elifs {
                     let c_type = self.infer_expr(e_cond);
@@ -708,13 +809,13 @@ impl TypeChecker {
                     }
                     self.table.enter_scope();
                     self.check_block(e_block);
-                    self.table.exit_scope();
+                    self.exit_scope();
                 }
 
                 if let Some(eb) = else_branch {
                     self.table.enter_scope();
                     self.check_block(eb);
-                    self.table.exit_scope();
+                    self.exit_scope();
                 }
             }
             Stmt::For {
@@ -730,9 +831,9 @@ impl TypeChecker {
 
                 self.inside_loop += 1;
                 self.table.enter_scope();
-                self.table.insert(var.clone(), SymbolInfo::Variable(var_type));
+                self.table.insert(var.clone(), SymbolInfo::Variable { ty: var_type, used: false });
                 self.check_block(body);
-                self.table.exit_scope();
+                self.exit_scope();
                 self.inside_loop -= 1;
             }
             Stmt::While { cond, body } => {
@@ -755,7 +856,7 @@ impl TypeChecker {
                 self.inside_loop += 1;
                 self.table.enter_scope();
                 self.check_block(body);
-                self.table.exit_scope();
+                self.exit_scope();
                 self.inside_loop -= 1;
             }
             Stmt::Break => {
@@ -854,10 +955,10 @@ impl TypeChecker {
                     }
                     self.table.enter_scope();
                     for (name, ty) in variant_bindings {
-                        self.table.insert(name, SymbolInfo::Variable(ty));
+                        self.table.insert(name, SymbolInfo::Variable { ty, used: false });
                     }
                     self.check_block(body);
-                    self.table.exit_scope();
+                    self.exit_scope();
                 }
             }
             Stmt::Return(expr_opt) => {
@@ -925,20 +1026,23 @@ impl TypeChecker {
 
     fn infer_expr(&mut self, expr: &Expr) -> Type {
         match expr {
-            Expr::Ident(name) => match self.table.lookup(name).cloned() {
-                Some(SymbolInfo::Variable(t)) => t,
-                Some(SymbolInfo::Function { .. }) => Type::Basic("unknown".to_string()),
-                None => {
-                    self.errors.push(SemanticError {
-                        line: 0,
-                        column: 0,
-                        code: "E002".to_string(),
-                        message: format!("undefined variable '{}'", name),
-                        hint: "Declare the variable before using it.".to_string(),
-                    });
-                    Type::Basic("unknown".to_string())
+            Expr::Ident(name) => {
+                self.mark_used(name);
+                match self.table.lookup(name).cloned() {
+                    Some(SymbolInfo::Variable { ty: t, .. }) => t,
+                    Some(SymbolInfo::Function { .. }) => Type::Basic("unknown".to_string()),
+                    None => {
+                        self.errors.push(SemanticError {
+                            line: 0,
+                            column: 0,
+                            code: "E002".to_string(),
+                            message: format!("undefined variable '{}'", name),
+                            hint: "Declare the variable before using it.".to_string(),
+                        });
+                        Type::Basic("unknown".to_string())
+                    }
                 }
-            },
+            }
             Expr::ListLiteral(items) => {
                 let elem_type = if items.is_empty() {
                     Type::Basic("unknown".to_string())
@@ -1052,6 +1156,7 @@ impl TypeChecker {
                     }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
                     if let Expr::Ident(mod_name) = &**receiver {
+                        self.mark_import_used(mod_name);
                         let fn_sig = self.imported_modules.get(mod_name)
                             .and_then(|mod_syms| mod_syms.get(method_name))
                             .cloned();
@@ -1112,7 +1217,7 @@ impl TypeChecker {
                                         (**v_ty).clone()
                                     };
                                     let refined_ty = Type::Map(Box::new(new_k), Box::new(new_v));
-                                    self.table.update(var_name, SymbolInfo::Variable(refined_ty.clone()));
+                                    self.table.update(var_name, SymbolInfo::Variable { ty: refined_ty.clone(), used: false });
                                     receiver_ty = refined_ty;
                                 }
                             }
@@ -1209,10 +1314,11 @@ impl TypeChecker {
             }
             Expr::FieldAccess { expr: inner, field } => {
                 if let Expr::Ident(mod_name) = &**inner {
+                    self.mark_import_used(mod_name);
                     if let Some(mod_syms) = self.imported_modules.get(mod_name) {
                         if let Some(sym_info) = mod_syms.get(field) {
                             return match sym_info {
-                                SymbolInfo::Variable(t) => t.clone(),
+                                SymbolInfo::Variable { ty: t, .. } => t.clone(),
                                 SymbolInfo::Function { ret_type, .. } => ret_type.clone().unwrap_or(Type::Basic("void".to_string())),
                             };
                         }
@@ -1237,16 +1343,16 @@ impl TypeChecker {
                 let prev_ret = self.current_fn_return_type.clone();
                 self.current_fn_return_type = return_type.clone();
                 
-                self.table.scopes.push(std::collections::HashMap::new());
+                self.table.enter_scope();
                 for p in params {
-                    self.table.insert(p.name.clone(), SymbolInfo::Variable(p.type_ann.clone()));
+                    self.table.insert(p.name.clone(), SymbolInfo::Variable { ty: p.type_ann.clone(), used: false });
                 }
                 
                 for stmt in &body.stmts {
                     self.check_stmt(stmt);
                 }
                 
-                self.table.scopes.pop();
+                self.exit_scope();
                 self.current_fn_return_type = prev_ret;
                 Type::Function(param_types, Box::new(return_type.clone().unwrap_or(Type::Basic("unknown".to_string()))))
             }
@@ -1489,5 +1595,72 @@ fn test_guard(cond: bool)
         let errors = check(code);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code, "E017");
+    }
+
+    fn check_warnings(code: &str) -> Vec<SemanticError> {
+        let tokens = lexer::Lexer::tokenize(code);
+        let mut parser = parser::Parser::new(tokens);
+        let prog = parser.parse();
+        let mut checker = TypeChecker::new();
+        checker.check_program(&prog);
+        checker.warnings
+    }
+
+    #[test]
+    fn test_w001_unused_variable() {
+        let code = "
+task main
+    x = 10
+";
+        let warnings = check_warnings(code);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].code, "W001");
+        assert!(warnings[0].message.contains("'x' declared but never used"));
+    }
+
+    #[test]
+    fn test_no_warnings_for_used_variables() {
+        let code = "
+task main
+    x = 10
+    show(x)
+";
+        let warnings = check_warnings(code);
+        assert!(warnings.is_empty(), "Expected no warnings, got {:?}", warnings);
+    }
+
+    #[test]
+    fn test_no_warnings_for_underscore_variables() {
+        let code = "
+task main
+    _unused = 10
+";
+        let warnings = check_warnings(code);
+        assert!(warnings.is_empty(), "Expected no warnings, got {:?}", warnings);
+    }
+
+    #[test]
+    fn test_w002_unused_import() {
+        let code = "
+use io
+task main
+    x = 10
+    show(x)
+";
+        let warnings = check_warnings(code);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].code, "W002");
+        assert!(warnings[0].message.contains("'io' imported but never used"));
+    }
+
+    #[test]
+    fn test_no_warnings_for_used_import() {
+        let code = "
+use io
+task main
+    io.print(\"hello\")
+";
+        let warnings = check_warnings(code);
+        assert!(warnings.is_empty(), "Expected no warnings, got {:?}", warnings);
     }
 }

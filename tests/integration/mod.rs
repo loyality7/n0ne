@@ -55,3 +55,24 @@ pub fn compile_and_run(source: &str) -> (String, i32) {
     
     (stdout, run_status.status.code().unwrap_or(1))
 }
+
+pub fn compile_and_get_warnings(source: &str) -> String {
+    use std::fs;
+    use std::process::Command;
+
+    let temp_dir = std::env::temp_dir();
+    let src_path = temp_dir.join("test_script.n0");
+    fs::write(&src_path, source).unwrap();
+
+    let cli_path = env!("CARGO_BIN_EXE_n0ne");
+
+    // Build the binary
+    let build_status = Command::new(cli_path)
+        .arg("build")
+        .arg(&src_path)
+        .output()
+        .unwrap();
+
+    String::from_utf8_lossy(&build_status.stderr).to_string()
+}
+

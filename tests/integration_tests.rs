@@ -1,5 +1,5 @@
 mod integration;
-use integration::compile_and_run;
+use integration::{compile_and_run, compile_and_get_warnings};
 
 #[test]
 fn test_hello_world() {
@@ -136,3 +136,29 @@ fn test_empty_list_loop_no_crash() {
     assert_eq!(out.trim(), "");
     assert_eq!(code, 0);
 }
+
+#[test]
+fn test_unused_variable_integration() {
+    let source = "
+task main
+    x = 10
+    show(\"done\")
+";
+    let stderr = compile_and_get_warnings(source);
+    assert!(stderr.contains("warning[W001]"));
+    assert!(stderr.contains("'x' declared but never used"));
+}
+
+#[test]
+fn test_unused_import_integration() {
+    let source = "
+use io
+task main
+    x = 10
+    show(x)
+";
+    let stderr = compile_and_get_warnings(source);
+    assert!(stderr.contains("warning[W002]"));
+    assert!(stderr.contains("'io' imported but never used"));
+}
+

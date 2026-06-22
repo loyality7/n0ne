@@ -332,7 +332,7 @@ impl Parser {
         }
 
         self.consume(TokenKind::Newline);
-        UseDecl { path, kind, items }
+        UseDecl { path, kind, items, line: tok_line }
     }
 
     pub(crate) fn token_to_string(kind: &TokenKind) -> String {

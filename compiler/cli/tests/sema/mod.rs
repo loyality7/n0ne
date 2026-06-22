@@ -90,3 +90,19 @@ fn test_sema_valid_programs() {
     sema_ok("type User\n    name: string\ntask main\n    u = User()\n    u.name = \"x\"\n");
     sema_ok("task main\n    while true\n        break\n");
 }
+
+#[test]
+fn test_sema_w001_unused_variable() {
+    let warnings = crate::helpers::compile_get_warnings("task main\n    x = 10\n");
+    let combined = warnings.join("\n");
+    assert!(combined.contains("warning[W001]"), "Expected W001 warning, but got:\n{}", combined);
+    assert!(combined.contains("'x' declared but never used"));
+}
+
+#[test]
+fn test_sema_w002_unused_import() {
+    let warnings = crate::helpers::compile_get_warnings("use io\ntask main\n    x = 10\n    show(x)\n");
+    let combined = warnings.join("\n");
+    assert!(combined.contains("warning[W002]"), "Expected W002 warning, but got:\n{}", combined);
+    assert!(combined.contains("'io' imported but never used"));
+}

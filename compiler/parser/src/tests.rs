@@ -252,22 +252,26 @@ mod tests {
                 TopLevelDecl::UseDecl(UseDecl {
                     path: "http".to_string(),
                     kind: UseKind::Stdlib,
-                    items: None
+                    items: None,
+                    line: 1,
                 }),
                 TopLevelDecl::UseDecl(UseDecl {
                     path: "./mymodule".to_string(),
                     kind: UseKind::Local,
-                    items: None
+                    items: None,
+                    line: 2,
                 }),
                 TopLevelDecl::UseDecl(UseDecl {
                     path: "pkg/name".to_string(),
                     kind: UseKind::Package,
-                    items: None
+                    items: None,
+                    line: 3,
                 }),
                 TopLevelDecl::UseDecl(UseDecl {
                     path: "io".to_string(),
                     kind: UseKind::Stdlib,
-                    items: Some(vec!["show".to_string(), "read".to_string()])
+                    items: Some(vec!["show".to_string(), "read".to_string()]),
+                    line: 4,
                 }),
             ]
         );
