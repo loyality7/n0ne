@@ -13,6 +13,18 @@ impl LLVMGenerator {
                     ));
                     return r;
                 }
+                if let Some((_, _, tag_val)) = self.find_variant(name) {
+                    let r = self.next_reg();
+                    self.body.push_str(&format!(
+                        "    {} = call ptr @n0_c_alloc(i64 8)\n",
+                        r
+                    ));
+                    self.body.push_str(&format!(
+                        "    call void @n0_c_store_int(ptr {}, i64 0, i64 {})\n",
+                        r, tag_val
+                    ));
+                    return r;
+                }
                 if let Some((ptr, ty)) = self.variables.get(name).cloned() {
                     let r = self.next_reg();
                     let ty_str = self.llvm_type(&ty);
@@ -359,6 +371,46 @@ impl LLVMGenerator {
             }
             Expr::CallExpr { callee, args } => {
                 if let Expr::Ident(name) = &**callee {
+                    if let Some((_, var, tag_val)) = self.find_variant(name) {
+                        let size = 8 + var.fields.len() as i64 * 8;
+                        let r = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = call ptr @n0_c_alloc(i64 {})\n",
+                            r, size
+                        ));
+                        self.body.push_str(&format!(
+                            "    call void @n0_c_store_int(ptr {}, i64 0, i64 {})\n",
+                            r, tag_val
+                        ));
+                        for (i, arg) in args.iter().enumerate() {
+                            let arg_reg = self.gen_expr(arg);
+                            let arg_ty = self.infer_expr_type(arg);
+                            let arg_llvm_ty = self.llvm_type(&arg_ty);
+                            let offset = 8 + (i * 8) as i64;
+                            if arg_llvm_ty == "double" {
+                                let cast_reg = self.next_reg();
+                                self.body.push_str(&format!(
+                                    "    {} = bitcast double {} to i64\n",
+                                    cast_reg, arg_reg
+                                ));
+                                self.body.push_str(&format!(
+                                    "    call void @n0_c_store_int(ptr {}, i64 {}, i64 {})\n",
+                                    r, offset, cast_reg
+                                ));
+                            } else if arg_llvm_ty == "ptr" {
+                                self.body.push_str(&format!(
+                                    "    call void @n0_c_store_string(ptr {}, i64 {}, ptr {})\n",
+                                    r, offset, arg_reg
+                                ));
+                            } else {
+                                self.body.push_str(&format!(
+                                    "    call void @n0_c_store_int(ptr {}, i64 {}, i64 {})\n",
+                                    r, offset, arg_reg
+                                ));
+                            }
+                        }
+                        return r;
+                    }
                     if self.structs.contains_key(name) {
                         let decl = self.structs.get(name).unwrap().clone();
                         let size = 8 + decl.fields.len() as i64 * 8;
@@ -1097,6 +1149,42 @@ impl LLVMGenerator {
                     ));
                 }
                 val_reg
+            }
+            Expr::Tuple(items) => {
+                let size = std::cmp::max(8, items.len() as i64 * 8);
+                let r = self.next_reg();
+                self.body.push_str(&format!(
+                    "    {} = call ptr @n0_c_alloc(i64 {})\n",
+                    r, size
+                ));
+                for (i, item) in items.iter().enumerate() {
+                    let item_reg = self.gen_expr(item);
+                    let item_ty = self.infer_expr_type(item);
+                    let item_llvm_ty = self.llvm_type(&item_ty);
+                    let offset = (i * 8) as i64;
+                    if item_llvm_ty == "double" {
+                        let cast_reg = self.next_reg();
+                        self.body.push_str(&format!(
+                            "    {} = bitcast double {} to i64\n",
+                            cast_reg, item_reg
+                        ));
+                        self.body.push_str(&format!(
+                            "    call void @n0_c_store_int(ptr {}, i64 {}, i64 {})\n",
+                            r, offset, cast_reg
+                        ));
+                    } else if item_llvm_ty == "ptr" {
+                        self.body.push_str(&format!(
+                            "    call void @n0_c_store_string(ptr {}, i64 {}, ptr {})\n",
+                            r, offset, item_reg
+                        ));
+                    } else {
+                        self.body.push_str(&format!(
+                            "    call void @n0_c_store_int(ptr {}, i64 {}, i64 {})\n",
+                            r, offset, item_reg
+                        ));
+                    }
+                }
+                r
             }
         }
     }

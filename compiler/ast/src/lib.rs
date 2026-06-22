@@ -10,6 +10,7 @@ pub struct Program {
 pub enum TopLevelDecl {
     FnDecl(FnDecl),
     TypeDecl(TypeDecl),
+    EnumDecl(EnumDecl),
     TaskDecl(TaskDecl),
     UseDecl(UseDecl),
     ConstDecl(ConstDecl),
@@ -40,6 +41,18 @@ pub struct Param {
 pub struct TypeDecl {
     pub name: String,
     pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDecl {
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    pub name: String,
+    pub fields: Vec<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +94,7 @@ pub enum Type {
     Map(Box<Type>, Box<Type>), // map[K, V]
     Result(Box<Type>),         // result[T]
     Option(Box<Type>),         // option[T]
+    Tuple(Vec<Type>),          // (T1, T2, ...)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,6 +138,10 @@ pub enum Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MatchArm {
     Literal(Literal),
+    Variant {
+        variant_name: String,
+        bindings: Vec<String>,
+    },
     Wildcard,
 }
 
@@ -167,6 +185,7 @@ pub enum Expr {
         field: String,
     },
     TryExpr(Box<Expr>),
+    Tuple(Vec<Expr>),          // (e1, e2, ...)
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -21,6 +21,9 @@ impl LLVMGenerator {
                 if name == "none" {
                     return Type::Option(Box::new(Type::Basic("unknown".to_string())));
                 }
+                if let Some((enum_decl, _, _)) = self.find_variant(name) {
+                    return Type::Basic(enum_decl.name.clone());
+                }
                 if let Some((_, ty)) = self.variables.get(name) {
                     ty.clone()
                 } else if let Some(ty) = self.global_consts.get(name) {
@@ -37,6 +40,9 @@ impl LLVMGenerator {
             },
             Expr::CallExpr { callee, .. } => {
                 if let Expr::Ident(name) = &**callee {
+                    if let Some((enum_decl, _, _)) = self.find_variant(name) {
+                        return Type::Basic(enum_decl.name.clone());
+                    }
                     if name.starts_with("make_") {
                         let type_name = &name[5..];
                         let mut chars = type_name.chars();
@@ -233,7 +239,22 @@ impl LLVMGenerator {
                 }
             }
             Expr::FStringExpr(_) => Type::Basic("string".to_string()),
+            Expr::Tuple(items) => {
+                let types = items.iter().map(|item| self.infer_expr_type(item)).collect();
+                Type::Tuple(types)
+            }
             _ => Type::Basic("int".to_string()),
         }
+    }
+
+    pub(crate) fn find_variant(&self, name: &str) -> Option<(ast::EnumDecl, ast::EnumVariant, i64)> {
+        for e in self.enums.values() {
+            for (idx, var) in e.variants.iter().enumerate() {
+                if var.name == name {
+                    return Some((e.clone(), var.clone(), idx as i64));
+                }
+            }
+        }
+        None
     }
 }

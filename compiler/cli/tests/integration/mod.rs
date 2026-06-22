@@ -303,3 +303,49 @@ compile_error_test!(wrong_arg_count,
     source: "fn f(a: int)\n    show(a.to_string())\ntask main\n    f(1, 2)\n",
     contains: "E004",
 );
+// SECTION 13 — ENUMS
+test!(enum_basic,
+    source: "enum Color\n    Red\n    Green\n    Blue\n\ntask main\n    c = Red\n    match c\n        Red -> show(\"is red\")\n        Green -> show(\"is green\")\n        Blue -> show(\"is blue\")",
+    stdout: "is red\n"
+);
+
+test!(enum_with_data,
+    source: "enum Message\n    Quit\n    Move(int, int)\n    Write(string)\n\ntask main\n    m = Move(10, 20)\n    match m\n        Quit -> show(\"quit\")\n        Move(x, y) -> show(f\"move {x} {y}\")\n        Write(s) -> show(s)",
+    stdout: "move 10 20\n"
+);
+
+compile_error_test!(enum_wrong_bindings,
+    source: "enum Message\n    Move(int, int)\n\ntask main\n    m = Move(10, 20)\n    match m\n        Move(x) -> show(\"x\")",
+    contains: "E004",
+    contains: "wrong number of bindings",
+);
+
+compile_error_test!(enum_undefined_variant,
+    source: "enum Message\n    Quit\n\ntask main\n    m = Quit\n    match m\n        Other -> show(\"other\")",
+    contains: "E003",
+    contains: "undefined enum variant",
+);
+
+// SECTION 14 — MULTIPLE RETURN VALUES & TUPLES
+test!(tuple_basic,
+    source: "fn get_pair() -> (int, string)\n    return (42, \"hello\")\n\ntask main\n    val, name = get_pair()\n    show(val.to_string())\n    show(name)",
+    stdout: "42\nhello\n"
+);
+
+test!(tuple_literal,
+    source: "task main\n    t = (1, 2)\n    a, b = t\n    show(a.to_string())\n    show(b.to_string())",
+    stdout: "1\n2\n"
+);
+
+compile_error_test!(tuple_size_mismatch,
+    source: "task main\n    a, b = (1, 2, 3)",
+    contains: "E001",
+    contains: "cannot unpack tuple of size 3 into 2 variables",
+);
+
+compile_error_test!(tuple_unpack_non_tuple,
+    source: "task main\n    a, b = 42",
+    contains: "E001",
+    contains: "expected tuple, found",
+);
+

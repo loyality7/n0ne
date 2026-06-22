@@ -8,6 +8,57 @@ impl LLVMGenerator {
             Stmt::Assign { target, op, value } => {
                 let val_reg = self.gen_expr(value);
                 let val_ty = self.infer_expr_type(value);
+
+                if let Expr::Tuple(targets) = target {
+                    if let Type::Tuple(types) = &val_ty {
+                        for (i, t_expr) in targets.iter().enumerate() {
+                            if let Expr::Ident(name) = t_expr {
+                                let field_ty = &types[i];
+                                let field_llvm_ty = self.llvm_type(field_ty);
+                                let offset = (i * 8) as i64;
+
+                                let field_reg = self.next_reg();
+                                if field_llvm_ty == "ptr" {
+                                    self.body.push_str(&format!(
+                                        "    {} = call ptr @n0_c_load_string(ptr {}, i64 {})\n",
+                                        field_reg, val_reg, offset
+                                    ));
+                                } else if field_llvm_ty == "double" {
+                                    let temp_reg = self.next_reg();
+                                    self.body.push_str(&format!(
+                                        "    {} = call i64 @n0_c_load_int(ptr {}, i64 {})\n",
+                                        temp_reg, val_reg, offset
+                                    ));
+                                    self.body.push_str(&format!(
+                                        "    {} = bitcast i64 {} to double\n",
+                                        field_reg, temp_reg
+                                    ));
+                                } else {
+                                    self.body.push_str(&format!(
+                                        "    {} = call i64 @n0_c_load_int(ptr {}, i64 {})\n",
+                                        field_reg, val_reg, offset
+                                    ));
+                                }
+
+                                if !self.variables.contains_key(name) {
+                                    self.body.push_str(&format!(
+                                        "    %_{} = alloca {}, align 8\n",
+                                        name, field_llvm_ty
+                                    ));
+                                    self.variables.insert(name.clone(), (format!("%_{}", name), field_ty.clone()));
+                                }
+
+                                let (ptr, _) = self.variables.get(name).unwrap().clone();
+                                self.body.push_str(&format!(
+                                    "    store {} {}, ptr {}, align 8\n",
+                                    field_llvm_ty, field_reg, ptr
+                                ));
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 let val_llvm_ty = self.llvm_type(&val_ty);
 
                 if let Expr::Ident(name) = target {
@@ -404,6 +455,83 @@ impl LLVMGenerator {
                                 cmp_reg, case_body_lbl, next_cmp_lbl, case_body_lbl
                             ));
                             self.gen_block(body);
+                            if !block_has_terminator(body) {
+                                self.body.push_str(&format!("    br label %{}\n", exit_lbl));
+                            }
+                        }
+                        MatchArm::Variant { variant_name, bindings } => {
+                            let (_, var, tag_val) = self.find_variant(variant_name).expect("Sema guaranteed variant exists");
+                            let tag_reg = self.next_reg();
+                            self.body.push_str(&format!(
+                                "    {} = call i64 @n0_c_load_int(ptr {}, i64 0)\n",
+                                tag_reg, val_reg
+                            ));
+                            let cmp_reg = self.next_reg();
+                            self.body.push_str(&format!(
+                                "    {} = icmp eq i64 {}, {}\n",
+                                cmp_reg, tag_reg, tag_val
+                            ));
+
+                            let case_body_lbl = self.next_label("match_body");
+                            self.body.push_str(&format!(
+                                "    br i1 {}, label %{}, label %{}\n\n{}:\n",
+                                cmp_reg, case_body_lbl, next_cmp_lbl, case_body_lbl
+                            ));
+
+                            let old_vars = self.variables.clone();
+
+                            for (idx, binding) in bindings.iter().enumerate() {
+                                if idx < var.fields.len() {
+                                    let field_ty = &var.fields[idx];
+                                    let llvm_ty = self.llvm_type(field_ty);
+                                    let offset = 8 + (idx * 8) as i64;
+
+                                    self.body.push_str(&format!(
+                                        "    %_{} = alloca {}, align 8\n",
+                                        binding, llvm_ty
+                                    ));
+                                    self.variables.insert(binding.clone(), (format!("%_{}", binding), field_ty.clone()));
+
+                                    let val_loaded = self.next_reg();
+                                    if llvm_ty == "ptr" {
+                                        self.body.push_str(&format!(
+                                            "    {} = call ptr @n0_c_load_string(ptr {}, i64 {})\n",
+                                            val_loaded, val_reg, offset
+                                        ));
+                                        self.body.push_str(&format!(
+                                            "    call void @n0_c_store_string(ptr %_{}, i64 0, ptr {})\n",
+                                            binding, val_loaded
+                                        ));
+                                    } else if llvm_ty == "double" {
+                                        self.body.push_str(&format!(
+                                            "    {} = call i64 @n0_c_load_int(ptr {}, i64 {})\n",
+                                            val_loaded, val_reg, offset
+                                        ));
+                                        let cast_reg = self.next_reg();
+                                        self.body.push_str(&format!(
+                                            "    {} = bitcast i64 {} to double\n",
+                                            cast_reg, val_loaded
+                                        ));
+                                        self.body.push_str(&format!(
+                                            "    call void @n0_c_store_int(ptr %_{}, i64 0, i64 {})\n",
+                                            binding, cast_reg
+                                        ));
+                                    } else {
+                                        self.body.push_str(&format!(
+                                            "    {} = call i64 @n0_c_load_int(ptr {}, i64 {})\n",
+                                            val_loaded, val_reg, offset
+                                        ));
+                                        self.body.push_str(&format!(
+                                            "    call void @n0_c_store_int(ptr %_{}, i64 0, i64 {})\n",
+                                            binding, val_loaded
+                                        ));
+                                    }
+                                }
+                            }
+
+                            self.gen_block(body);
+                            self.variables = old_vars;
+
                             if !block_has_terminator(body) {
                                 self.body.push_str(&format!("    br label %{}\n", exit_lbl));
                             }
