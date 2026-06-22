@@ -59,6 +59,7 @@ pub enum TokenKind {
     MinusEq,    // -=
     StarEq,     // *=
     SlashEq,    // /=
+    Pipe,       // |>
 
     // Delimiters
     LParen,     // (
@@ -133,6 +134,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::MinusEq => write!(f, "-="),
             TokenKind::StarEq => write!(f, "*="),
             TokenKind::SlashEq => write!(f, "/="),
+            TokenKind::Pipe => write!(f, "|>"),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::LBracket => write!(f, "["),

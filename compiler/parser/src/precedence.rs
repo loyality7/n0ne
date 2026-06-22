@@ -1,6 +1,7 @@
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Precedence {
     None,
+    Pipe,
     Or,
     And,
     Comparison,

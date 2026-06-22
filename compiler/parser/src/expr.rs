@@ -170,6 +170,7 @@ impl Parser {
             | TokenKind::GtEq => Precedence::Comparison,
             TokenKind::And => Precedence::And,
             TokenKind::Or => Precedence::Or,
+            TokenKind::Pipe => Precedence::Pipe,
             _ => Precedence::None,
         }
     }
@@ -218,6 +219,19 @@ impl Parser {
                     right: Box::new(right),
                 }
             }
+            TokenKind::Pipe => {
+                let right = self.parse_expr_precedence(Precedence::Pipe);
+                match right {
+                    Expr::CallExpr { callee, mut args } => {
+                        args.insert(0, left);
+                        Expr::CallExpr { callee, args }
+                    }
+                    _ => Expr::CallExpr {
+                        callee: Box::new(right),
+                        args: vec![left],
+                    },
+                }
+            }
             kind => {
                 let op = match &kind {
                     TokenKind::Plus => BinOp::Add,
@@ -263,6 +277,7 @@ impl Parser {
             | TokenKind::GtEq => Precedence::Comparison,
             TokenKind::And => Precedence::And,
             TokenKind::Or => Precedence::Or,
+            TokenKind::Pipe => Precedence::Pipe,
             _ => Precedence::None,
         }
     }

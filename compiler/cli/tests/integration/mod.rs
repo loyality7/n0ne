@@ -411,3 +411,22 @@ task main
 ",
     stdout: "5\n2\n2\n2\n15\n3\ntrue\ntrue\n"
 );
+
+test!(
+    pipe_operator,
+    source: "
+fn add_one(x: int) -> int
+    return x + 1
+
+fn double(x: int) -> int
+    return x * 2
+
+fn show_val(x: int) -> int
+    show(x)
+    return x
+
+task main
+    res = 5 |> add_one |> double |> show_val
+",
+    stdout: "12\n"
+);

@@ -620,6 +620,17 @@ impl Lexer {
                         ']' => TokenKind::RBracket,
                         '{' => TokenKind::LBrace,
                         '}' => TokenKind::RBrace,
+                        '|' => {
+                            if cursor.peek() == Some('>') {
+                                cursor.bump();
+                                TokenKind::Pipe
+                            } else {
+                                panic!(
+                                    "Lexical error: Unexpected character '|' (expected '>') at line {}, column {}",
+                                    tok_line, tok_col
+                                );
+                            }
+                        }
                         '.' => TokenKind::Dot,
                         ',' => TokenKind::Comma,
                         ':' => TokenKind::Colon,
