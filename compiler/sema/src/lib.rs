@@ -883,6 +883,18 @@ impl TypeChecker {
             Stmt::Expr(expr) => {
                 self.infer_expr(expr);
             }
+            Stmt::Defer(expr) => {
+                if !matches!(expr, Expr::CallExpr { .. }) {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E016".to_string(),
+                        message: "defer expression must be a function call".to_string(),
+                        hint: "Use defer with a function call expression, e.g. defer clean_up()".to_string(),
+                    });
+                }
+                self.infer_expr(expr);
+            }
         }
     }
 

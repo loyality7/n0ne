@@ -462,6 +462,7 @@ impl Lexer {
                         "continue" => TokenKind::Continue,
                         "match" | "n0match" => TokenKind::Match,
                         "enum" => TokenKind::Enum,
+                        "defer" => TokenKind::Defer,
                         _ => TokenKind::Ident(ident_str),
                     };
 

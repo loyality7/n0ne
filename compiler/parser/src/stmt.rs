@@ -40,6 +40,11 @@ impl Parser {
             let const_decl = self.parse_const_decl();
             self.consume(TokenKind::Newline);
             Stmt::ConstDecl(const_decl)
+        } else if self.check(TokenKind::Defer) {
+            self.advance();
+            let expr = self.parse_expr();
+            self.consume(TokenKind::Newline);
+            Stmt::Defer(expr)
         } else {
             // Either assign statement or expression statement
             let target = self.parse_expr_comma();

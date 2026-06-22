@@ -40,6 +40,7 @@ pub enum TokenKind {
     Continue,
     Match,
     Enum,
+    Defer,
 
     // Operators
     Plus,       // +
@@ -117,6 +118,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Continue => write!(f, "continue"),
             TokenKind::Match => write!(f, "match"),
             TokenKind::Enum => write!(f, "enum"),
+            TokenKind::Defer => write!(f, "defer"),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Star => write!(f, "*"),

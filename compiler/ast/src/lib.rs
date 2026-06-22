@@ -142,6 +142,7 @@ pub enum Stmt {
     },
     Return(Option<Expr>),
     Expr(Expr),
+    Defer(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]

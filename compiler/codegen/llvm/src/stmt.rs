@@ -550,7 +550,7 @@ impl LLVMGenerator {
                 self.body.push_str(&format!("\n{}:\n", exit_lbl));
             }
             Stmt::Return(opt_val) => {
-                if let Some(v) = opt_val {
+                let final_reg_opt = if let Some(v) = opt_val {
                     let val_reg = self.gen_expr(v);
                     let val_ty = self.infer_expr_type(v);
                     let mut val_llvm_ty = self.llvm_type(&val_ty);
@@ -564,6 +564,14 @@ impl LLVMGenerator {
                         final_reg = cast_reg;
                         val_llvm_ty = "i32".to_string();
                     }
+                    Some((val_llvm_ty, final_reg))
+                } else {
+                    None
+                };
+
+                self.gen_deferred_calls();
+
+                if let Some((val_llvm_ty, final_reg)) = final_reg_opt {
                     self.body.push_str(&format!(
                         "    ret {} {}\n",
                         val_llvm_ty, final_reg
@@ -587,6 +595,9 @@ impl LLVMGenerator {
             }
             Stmt::Expr(e) => {
                 self.gen_expr(e);
+            }
+            Stmt::Defer(expr) => {
+                self.deferred_calls.push(expr.clone());
             }
         }
     }

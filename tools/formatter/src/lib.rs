@@ -315,6 +315,12 @@ impl Formatter {
                 self.format_expr(e);
                 self.newline();
             }
+            Stmt::Defer(e) => {
+                self.push_indent();
+                self.out.push_str("defer ");
+                self.format_expr(e);
+                self.newline();
+            }
         }
     }
 

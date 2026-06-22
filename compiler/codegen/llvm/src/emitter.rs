@@ -181,6 +181,7 @@ impl LLVMGenerator {
     pub(crate) fn gen_fn(&mut self, f: &FnDecl) {
         self.variables.clear();
         self.reg_counter = 0;
+        self.deferred_calls.clear();
 
         let ret_ty = if let Some(rt) = &f.return_type {
             self.llvm_type(rt)
@@ -250,6 +251,7 @@ impl LLVMGenerator {
         self.gen_block(&f.body);
 
         if !block_has_return(&f.body) {
+            self.gen_deferred_calls();
             if f.name == "main" {
                 self.body.push_str("    ret i32 0\n");
             } else if ret_ty == "void" {
@@ -269,6 +271,7 @@ impl LLVMGenerator {
     pub(crate) fn gen_task(&mut self, t: &TaskDecl) {
         self.variables.clear();
         self.reg_counter = 0;
+        self.deferred_calls.clear();
 
         if t.name == "main" {
             self.current_ret_type = "i32".to_string();
@@ -288,6 +291,7 @@ impl LLVMGenerator {
         self.gen_block(&t.body);
 
         if !block_has_return(&t.body) {
+            self.gen_deferred_calls();
             if t.name == "main" {
                 self.body.push_str("    ret i32 0\n");
             } else {
@@ -327,6 +331,13 @@ impl LLVMGenerator {
     pub(crate) fn gen_block(&mut self, block: &Block) {
         for stmt in &block.stmts {
             self.gen_stmt(stmt);
+        }
+    }
+
+    pub(crate) fn gen_deferred_calls(&mut self) {
+        let calls = self.deferred_calls.clone();
+        for expr in calls.iter().rev() {
+            self.gen_expr(expr);
         }
     }
 }

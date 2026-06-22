@@ -27,6 +27,7 @@ pub struct LLVMGenerator {
     pub(crate) functions: HashMap<String, ast::FnDecl>,
     pub(crate) global_consts: HashMap<String, Type>,
     pub(crate) loop_stack: Vec<(String, String)>, // (continue_lbl, break_lbl)
+    pub(crate) deferred_calls: Vec<ast::Expr>,
     pub(crate) compiled_files: std::collections::HashSet<std::path::PathBuf>,
     pub(crate) current_file: Option<std::path::PathBuf>,
 }
@@ -48,6 +49,7 @@ impl LLVMGenerator {
             functions: HashMap::new(),
             global_consts: HashMap::new(),
             loop_stack: Vec::new(),
+            deferred_calls: Vec::new(),
             compiled_files: std::collections::HashSet::new(),
             current_file: None,
         }

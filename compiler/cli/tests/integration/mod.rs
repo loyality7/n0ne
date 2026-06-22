@@ -430,3 +430,48 @@ task main
 ",
     stdout: "12\n"
 );
+
+test!(
+    defer_basic,
+    source: "
+fn test_defer() -> int
+    defer show(\"deferred 1\")
+    defer show(\"deferred 2\")
+    show(\"body\")
+    return 42
+
+task main
+    res = test_defer()
+    show(res.to_string())
+",
+    stdout: "body\ndeferred 2\ndeferred 1\n42\n"
+);
+
+test!(
+    defer_early_return,
+    source: "
+fn test_defer_early(x: int) -> int
+    defer show(\"deferred\")
+    if x > 0
+        show(\"early branch\")
+        return 1
+    show(\"normal branch\")
+    return 2
+
+task main
+    test_defer_early(1)
+    test_defer_early(0)
+",
+    stdout: "early branch\ndeferred\nnormal branch\ndeferred\n"
+);
+
+compile_error_test!(
+    defer_must_be_fn_call,
+    source: "
+task main
+    x = 42
+    defer x
+",
+    contains: "E016",
+    contains: "defer expression must be a function call",
+);
