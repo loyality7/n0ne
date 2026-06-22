@@ -5,6 +5,7 @@ expression: ir
 @.str.0 = private unnamed_addr constant [12 x i8] c"hello world\00", align 1
 
 declare void @n0_show_string(ptr)
+declare void @n0_panic(ptr)
 declare void @n0_show_int(i64)
 declare void @n0_show_float(double)
 declare ptr @n0_c_alloc(i64)

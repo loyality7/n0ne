@@ -193,6 +193,9 @@ impl TypeChecker {
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
         });
+        tc.table.insert_global("panic".to_string(), SymbolInfo::Function {
+            params: vec![Type::Basic("string".to_string())], min_args: 1, ret_type: Some(Type::Basic("void".to_string())),
+        });
         tc.table.insert_global("ok".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: Some(Type::Result(Box::new(Type::Basic("unknown".to_string())))),
         });
@@ -804,7 +807,7 @@ impl TypeChecker {
                         }
                         MatchArm::Wildcard => {}
                         MatchArm::Variant { variant_name, bindings } => {
-                            if let Some(SymbolInfo::Function { params, min_args, ret_type }) = self.table.lookup(variant_name).cloned() {
+                            if let Some(SymbolInfo::Function { params, min_args: _, ret_type }) = self.table.lookup(variant_name).cloned() {
                                 if let Some(rt) = &ret_type {
                                     if !self.types_match(rt, &expr_type) && expr_type != Type::Basic("unknown".to_string()) {
                                         self.errors.push(SemanticError {
@@ -894,6 +897,28 @@ impl TypeChecker {
                     });
                 }
                 self.infer_expr(expr);
+            }
+            Stmt::Guard { cond, else_branch } => {
+                let cond_type = self.infer_expr(cond);
+                if cond_type != Type::Basic("bool".to_string()) && cond_type != Type::Basic("unknown".to_string()) {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E001".to_string(),
+                        message: format!("guard condition must be a bool, found {:?}", cond_type),
+                        hint: "Change the condition to evaluate to a boolean.".to_string(),
+                    });
+                }
+                self.check_block(else_branch);
+                if !self.block_diverges(else_branch) {
+                    self.errors.push(SemanticError {
+                        line: 0,
+                        column: 0,
+                        code: "E017".to_string(),
+                        message: "guard else block must return, panic, break, or continue".to_string(),
+                        hint: "Add a return, break, continue statement or call panic() at the end of the guard else block.".to_string(),
+                    });
+                }
             }
         }
     }
@@ -1256,6 +1281,44 @@ impl TypeChecker {
         }
         false
     }
+
+    fn block_diverges(&self, block: &Block) -> bool {
+        for stmt in &block.stmts {
+            if self.stmt_diverges(stmt) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn stmt_diverges(&self, stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Return(_) | Stmt::Break | Stmt::Continue => true,
+            Stmt::Expr(expr) => {
+                if let Expr::CallExpr { callee, .. } = expr {
+                    if let Expr::Ident(name) = &**callee {
+                        if name == "panic" {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            Stmt::If { then_branch, elifs, else_branch, .. } => {
+                let mut all_diverge = self.block_diverges(then_branch);
+                for (_, e_block) in elifs {
+                    all_diverge = all_diverge && self.block_diverges(e_block);
+                }
+                if let Some(eb) = else_branch {
+                    all_diverge = all_diverge && self.block_diverges(eb);
+                } else {
+                    all_diverge = false;
+                }
+                all_diverge
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1371,5 +1434,17 @@ fn add() -> int
         let errors = check(code);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code, "E012");
+    }
+
+    #[test]
+    fn test_e017_guard_must_diverge() {
+        let code = "
+fn test_guard(cond: bool)
+    guard cond else
+        x = 5
+";
+        let errors = check(code);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E017");
     }
 }

@@ -599,6 +599,39 @@ impl LLVMGenerator {
             Stmt::Defer(expr) => {
                 self.deferred_calls.push(expr.clone());
             }
+            Stmt::Guard { cond, else_branch } => {
+                let cond_reg = self.gen_expr(cond);
+                let cond_ty = self.infer_expr_type(cond);
+                let cond_llvm_ty = self.llvm_type(&cond_ty);
+                let cmp_reg = self.next_reg();
+
+                if cond_llvm_ty == "ptr" {
+                    self.body.push_str(&format!(
+                        "    {} = icmp ne ptr {}, null\n",
+                        cmp_reg, cond_reg
+                    ));
+                } else {
+                    self.body.push_str(&format!(
+                        "    {} = icmp ne i64 {}, 0\n",
+                        cmp_reg, cond_reg
+                    ));
+                }
+
+                let else_lbl = self.next_label("guard_else");
+                let merge_lbl = self.next_label("guard_merge");
+
+                self.body.push_str(&format!(
+                    "    br i1 {}, label %{}, label %{}\n\n{}:\n",
+                    cmp_reg, merge_lbl, else_lbl, else_lbl
+                ));
+
+                self.gen_block(else_branch);
+                if !block_has_terminator(else_branch) {
+                    self.body.push_str("    unreachable\n");
+                }
+
+                self.body.push_str(&format!("\n{}:\n", merge_lbl));
+            }
         }
     }
 }

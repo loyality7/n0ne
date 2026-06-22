@@ -41,6 +41,7 @@ pub enum TokenKind {
     Match,
     Enum,
     Defer,
+    Guard,
 
     // Operators
     Plus,       // +
@@ -119,6 +120,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Match => write!(f, "match"),
             TokenKind::Enum => write!(f, "enum"),
             TokenKind::Defer => write!(f, "defer"),
+            TokenKind::Guard => write!(f, "guard"),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Star => write!(f, "*"),

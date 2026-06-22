@@ -475,3 +475,49 @@ task main
     contains: "E016",
     contains: "defer expression must be a function call",
 );
+
+test!(
+    guard_basic,
+    source: "
+fn test_guard(x: int) -> int
+    guard x > 5 else
+        show(\"guard else executed\")
+        return 0
+    show(\"normal path\")
+    return x
+
+task main
+    res1 = test_guard(3)
+    show(res1.to_string())
+    res2 = test_guard(10)
+    show(res2.to_string())
+",
+    stdout: "guard else executed\n0\nnormal path\n10\n"
+);
+
+test!(
+    guard_panic,
+    source: "
+fn test_guard_panic(x: int) -> int
+    guard x > 5 else
+        panic(\"guard failed: x must be > 5\")
+    return x
+
+task main
+    test_guard_panic(3)
+",
+    stdout: "",
+    exit: 1
+);
+
+compile_error_test!(
+    guard_must_diverge,
+    source: "
+fn test_guard(cond: bool)
+    guard cond else
+        show(\"does not return or panic\")
+",
+    contains: "E017",
+    contains: "guard else block must return, panic, break, or continue",
+);
+

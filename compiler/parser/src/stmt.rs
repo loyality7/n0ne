@@ -45,6 +45,8 @@ impl Parser {
             let expr = self.parse_expr();
             self.consume(TokenKind::Newline);
             Stmt::Defer(expr)
+        } else if self.check(TokenKind::Guard) {
+            self.parse_guard_stmt()
         } else {
             // Either assign statement or expression statement
             let target = self.parse_expr_comma();
@@ -247,5 +249,14 @@ impl Parser {
                 other, tok.line, tok.column
             ),
         }
+    }
+
+    pub(crate) fn parse_guard_stmt(&mut self) -> Stmt {
+        self.consume(TokenKind::Guard);
+        let cond = self.parse_expr();
+        self.consume(TokenKind::Else);
+        self.consume(TokenKind::Newline);
+        let else_branch = self.parse_block();
+        Stmt::Guard { cond, else_branch }
     }
 }

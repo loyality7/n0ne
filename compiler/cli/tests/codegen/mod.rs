@@ -1,4 +1,3 @@
-use ast::*;
 use lexer::Lexer;
 use parser::Parser;
 

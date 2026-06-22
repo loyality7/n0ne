@@ -138,6 +138,7 @@ pub fn compile_to_binary(source: &str) -> (PathBuf, PathBuf) {
 }
 
 // Assert stdout equals expected exactly (normalized line endings)
+#[allow(dead_code)]
 pub fn assert_output(result: &TestResult, expected: &str) {
     assert_eq!(result.exit_code, 0, "Execution failed with exit code: {}\nStderr:\n{}", result.exit_code, result.stderr);
     let norm_stdout = result.stdout.replace("\r\n", "\n");
@@ -146,6 +147,7 @@ pub fn assert_output(result: &TestResult, expected: &str) {
 }
 
 // Assert compile fails with specific error code
+#[allow(dead_code)]
 pub fn assert_error(source: &str, error_code: &str) {
     match compile_n0ne(source) {
         Ok(_) => panic!("Compilation succeeded, but expected failure with code {}", error_code),
@@ -162,6 +164,7 @@ pub fn assert_error(source: &str, error_code: &str) {
 }
 
 // Assert compile fails with message containing string
+#[allow(dead_code)]
 pub fn assert_error_contains(source: &str, msg: &str) {
     match compile_n0ne(source) {
         Ok(_) => panic!("Compilation succeeded, but expected failure containing: {}", msg),
@@ -178,6 +181,7 @@ pub fn assert_error_contains(source: &str, msg: &str) {
 }
 
 // Clean up temp files after each test
+#[allow(dead_code)]
 pub fn cleanup(path: &str) {
     let p = Path::new(path);
     if p.exists() {

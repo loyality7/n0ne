@@ -13,6 +13,7 @@ pub(crate) fn get_builtin_mapping(name: &str) -> Option<(&'static str, bool)> {
         "none" => Some(("n0_make_none", true)),
         "ok" => Some(("n0_make_ok", true)),
         "err" => Some(("n0_make_err", true)),
+        "panic" => Some(("n0_panic", true)),
         _ => None,
     }
 }

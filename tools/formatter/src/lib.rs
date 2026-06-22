@@ -321,6 +321,14 @@ impl Formatter {
                 self.format_expr(e);
                 self.newline();
             }
+            Stmt::Guard { cond, else_branch } => {
+                self.push_indent();
+                self.out.push_str("guard ");
+                self.format_expr(cond);
+                self.out.push_str(" else");
+                self.newline();
+                self.format_block(else_branch);
+            }
         }
     }
 

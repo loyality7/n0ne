@@ -143,6 +143,10 @@ pub enum Stmt {
     Return(Option<Expr>),
     Expr(Expr),
     Defer(Expr),
+    Guard {
+        cond: Expr,
+        else_branch: Block,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

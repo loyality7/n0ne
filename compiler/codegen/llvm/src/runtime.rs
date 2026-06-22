@@ -660,6 +660,15 @@ void n0_show_err(const char* s) {
     #endif
 }
 
+void n0_panic(const char* s) {
+    if (!s) s = "panic";
+    n0_show_err(s);
+    #ifdef _WIN32
+    void exit(int status);
+    #endif
+    exit(1);
+}
+
 char* n0_io_read_line() {
     char buf[4096];
     int c;

@@ -81,6 +81,7 @@ impl LLVMGenerator {
 
         // Add standard declarations
         self.globals.push_str("declare void @n0_show_string(ptr)\n");
+        self.globals.push_str("declare void @n0_panic(ptr)\n");
         self.globals.push_str("declare void @n0_show_int(i64)\n");
         self.globals.push_str("declare void @n0_show_float(double)\n");
         self.globals.push_str("declare ptr @n0_c_alloc(i64)\n");
