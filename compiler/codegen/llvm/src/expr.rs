@@ -25,7 +25,9 @@ impl LLVMGenerator {
                     ));
                     return r;
                 }
-                if let Some((ptr, ty)) = self.variables.get(name).cloned() {
+                if self.functions.contains_key(name) {
+                    format!("@n0_{}", name)
+                } else if let Some((ptr, ty)) = self.variables.get(name).cloned() {
                     let r = self.next_reg();
                     let ty_str = self.llvm_type(&ty);
                     self.body.push_str(&format!(
@@ -698,6 +700,8 @@ impl LLVMGenerator {
                                     ("json", "decode") => ("n0_json_decode", "ptr"),
                                     ("http", "get") => ("n0_http_get", "ptr"),
                                     ("http", "post") => ("n0_http_post", "ptr"),
+                                    ("http", "get_json") => ("n0_http_get_json", "ptr"),
+                                    ("http", "server") => ("n0_http_server", "ptr"),
                                     _ => ("", ""),
                                 };
 
@@ -719,6 +723,18 @@ impl LLVMGenerator {
                                             cast_args.push(format!("ptr {}", r2));
                                         } else {
                                             cast_args.push(format!("ptr {}", arg_reg));
+                                        }
+                                    }
+
+                                    if mod_name == "http" {
+                                        if (method_name == "get" || method_name == "get_json") && cast_args.len() < 2 {
+                                            let r = self.next_reg();
+                                            self.body.push_str(&format!("    {} = inttoptr i64 30 to ptr\n", r));
+                                            cast_args.push(format!("ptr {}", r));
+                                        } else if method_name == "post" && cast_args.len() < 3 {
+                                            let r = self.next_reg();
+                                            self.body.push_str(&format!("    {} = inttoptr i64 30 to ptr\n", r));
+                                            cast_args.push(format!("ptr {}", r));
                                         }
                                     }
 
@@ -1399,6 +1415,7 @@ entry:
                     _ => "null".to_string(),
                 }
             }
+            Expr::NamedArg { name: _, value } => self.gen_expr(value),
         }
     }
 }

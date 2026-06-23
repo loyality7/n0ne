@@ -115,6 +115,14 @@ impl Symbol {
             },
         }
     }
+
+    pub fn fn_sym_opt(name: &str, params: Vec<Type>, min_args: usize, ret_type: Type) -> Self {
+        Self {
+            name: name.to_string(),
+            info: SymbolInfo::Function { params, min_args, ret_type: Some(ret_type),
+            },
+        }
+    }
 }
 
 pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
@@ -137,8 +145,10 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
             Symbol::fn_sym("decode", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string())))))),
         ]),
         "http" => Some(vec![
-            Symbol::fn_sym("get", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
-            Symbol::fn_sym("post", vec![Type::Basic("string".to_string()), Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym_opt("get", vec![Type::Basic("string".to_string()), Type::Basic("int".to_string())], 1, Type::Result(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym_opt("post", vec![Type::Basic("string".to_string()), Type::Basic("string".to_string()), Type::Basic("int".to_string())], 2, Type::Result(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym_opt("get_json", vec![Type::Basic("string".to_string()), Type::Basic("int".to_string())], 1, Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string())))))),
+            Symbol::fn_sym("server", vec![Type::Basic("int".to_string())], Type::Basic("HttpServer".to_string())),
         ]),
         _ => None,
     }
@@ -165,6 +175,7 @@ pub struct TypeChecker {
     inside_loop: usize,
     pub aliases: std::collections::HashMap<String, Type>,
     pub imports: Vec<ImportTrack>,
+    pub struct_fields: HashMap<String, Vec<Field>>,
 }
 
 impl TypeChecker {
@@ -253,6 +264,7 @@ impl TypeChecker {
             inside_loop: 0,
             aliases: std::collections::HashMap::new(),
             imports: Vec::new(),
+            struct_fields: HashMap::new(),
         };
         tc.table.insert_global("show".to_string(), SymbolInfo::Function {
             params: vec![Type::Basic("unknown".to_string())], min_args: 1, ret_type: None,
@@ -353,6 +365,7 @@ impl TypeChecker {
                         params: vec![], min_args: 0, ret_type: Some(Type::Basic(t.name.clone())),
                     };
                     self.table.insert_global(t.name.clone(), info);
+                    self.struct_fields.insert(t.name.clone(), t.fields.clone());
                 }
                 TopLevelDecl::TypeAliasDecl(a) => {
                     self.aliases.insert(a.name.clone(), a.target_type.clone());
@@ -463,6 +476,35 @@ impl TypeChecker {
                         }
                     }
                     self.imported_modules.insert(module_name, mod_symbols);
+                    if u.path == "http" {
+                        self.struct_fields.insert(
+                            "HttpRequest".to_string(),
+                            vec![
+                                Field { name: "method".to_string(), type_ann: Type::Basic("string".to_string()) },
+                                Field { name: "path".to_string(), type_ann: Type::Basic("string".to_string()) },
+                                Field { name: "body".to_string(), type_ann: Type::Basic("string".to_string()) },
+                                Field { name: "headers".to_string(), type_ann: Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))) },
+                            ],
+                        );
+                        self.struct_fields.insert(
+                            "HttpResponse".to_string(),
+                            vec![
+                                Field { name: "status".to_string(), type_ann: Type::Basic("int".to_string()) },
+                                Field { name: "body".to_string(), type_ann: Type::Basic("string".to_string()) },
+                                Field { name: "headers".to_string(), type_ann: Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))) },
+                            ],
+                        );
+                        self.table.insert_global("HttpRequest".to_string(), SymbolInfo::Function {
+                            params: vec![],
+                            min_args: 0,
+                            ret_type: Some(Type::Basic("HttpRequest".to_string())),
+                        });
+                        self.table.insert_global("HttpResponse".to_string(), SymbolInfo::Function {
+                            params: vec![],
+                            min_args: 0,
+                            ret_type: Some(Type::Basic("HttpResponse".to_string())),
+                        });
+                    }
                 } else {
                     self.errors.push(SemanticError {
                         line: 0,
@@ -943,12 +985,19 @@ impl TypeChecker {
                                     }
                                 }
                             } else {
+                                let candidates = self.get_fn_candidates();
+                                let suggestion = find_closest(variant_name, candidates.iter().map(|s| s.as_str()).collect());
+                                let hint = if let Some(suggest) = suggestion {
+                                    format!("did you mean '{}'?", suggest)
+                                } else {
+                                    "Ensure the variant name is defined in a declared enum.".to_string()
+                                };
                                 self.errors.push(SemanticError {
                                     line: 0,
                                     column: 0,
                                     code: "E003".to_string(),
                                     message: format!("undefined enum variant '{}'", variant_name),
-                                    hint: "Ensure the variant name is defined in a declared enum.".to_string(),
+                                    hint,
                                 });
                             }
                         }
@@ -1032,12 +1081,19 @@ impl TypeChecker {
                     Some(SymbolInfo::Variable { ty: t, .. }) => t,
                     Some(SymbolInfo::Function { .. }) => Type::Basic("unknown".to_string()),
                     None => {
+                        let candidates = self.get_var_candidates();
+                        let suggestion = find_closest(name, candidates.iter().map(|s| s.as_str()).collect());
+                        let hint = if let Some(suggest) = suggestion {
+                            format!("did you mean '{}'?", suggest)
+                        } else {
+                            "Declare the variable before using it.".to_string()
+                        };
                         self.errors.push(SemanticError {
                             line: 0,
                             column: 0,
                             code: "E002".to_string(),
                             message: format!("undefined variable '{}'", name),
-                            hint: "Declare the variable before using it.".to_string(),
+                            hint,
                         });
                         Type::Basic("unknown".to_string())
                     }
@@ -1145,55 +1201,77 @@ impl TypeChecker {
                         }
                         return resolved_ret_type;
                     } else if self.table.lookup(name).is_none() {
+                        let candidates = self.get_fn_candidates();
+                        let suggestion = find_closest(name, candidates.iter().map(|s| s.as_str()).collect());
+                        let hint = if let Some(suggest) = suggestion {
+                            format!("did you mean '{}'?", suggest)
+                        } else {
+                            "Declare the function before calling it.".to_string()
+                        };
                         self.errors.push(SemanticError {
                             line: 0,
                             column: 0,
                             code: "E003".to_string(),
                             message: format!("undefined function '{}'", name),
-                            hint: "Declare the function before calling it.".to_string(),
+                            hint,
                         });
                         return Type::Basic("unknown".to_string());
                     }
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
                     if let Expr::Ident(mod_name) = &**receiver {
-                        self.mark_import_used(mod_name);
-                        let fn_sig = self.imported_modules.get(mod_name)
-                            .and_then(|mod_syms| mod_syms.get(method_name))
-                            .cloned();
-                        if let Some(SymbolInfo::Function { params, min_args, ret_type }) = fn_sig {
-                            if args.len() < min_args || args.len() > params.len() {
+                        if let Some(mod_syms) = self.imported_modules.get(mod_name).cloned() {
+                            self.mark_import_used(mod_name);
+                            if let Some(SymbolInfo::Function { params, min_args, ret_type }) = mod_syms.get(method_name).cloned() {
+                                if args.len() < min_args || args.len() > params.len() {
+                                    self.errors.push(SemanticError {
+                                        line: 0,
+                                        column: 0,
+                                        code: "E004".to_string(),
+                                        message: format!(
+                                            "wrong argument count for function '{}.{}': expected {}-{}, found {}",
+                                            mod_name, method_name, min_args, params.len(), args.len()
+                                        ),
+                                        hint: "Pass the correct number of arguments.".to_string(),
+                                    });
+                                } else {
+                                    for (i, arg) in args.iter().enumerate() {
+                                        let arg_type = self.infer_expr(arg);
+                                        let expected_type = &params[i];
+                                        if !self.types_match(expected_type, &arg_type)
+                                            && arg_type != Type::Basic("unknown".to_string())
+                                            && expected_type != &Type::Basic("unknown".to_string())
+                                        {
+                                            self.errors.push(SemanticError {
+                                                line: 0,
+                                                column: 0,
+                                                code: "E005".to_string(),
+                                                message: format!(
+                                                    "wrong argument type in call to '{}.{}': expected '{:?}', found '{:?}'",
+                                                    mod_name, method_name, expected_type, arg_type
+                                                ),
+                                                hint: "Check the parameter types of the function.".to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                                return ret_type.clone().unwrap_or(Type::Basic("void".to_string()));
+                            } else {
+                                let candidates: Vec<&str> = mod_syms.keys().map(|s| s.as_str()).collect();
+                                let suggestion = find_closest(method_name, candidates);
+                                let hint = if let Some(suggest) = suggestion {
+                                    format!("did you mean '{}'?", suggest)
+                                } else {
+                                    format!("Check the module definition for '{}'.", method_name)
+                                };
                                 self.errors.push(SemanticError {
                                     line: 0,
                                     column: 0,
-                                    code: "E004".to_string(),
-                                    message: format!(
-                                        "wrong argument count for function '{}.{}': expected {}-{}, found {}",
-                                        mod_name, method_name, min_args, params.len(), args.len()
-                                    ),
-                                    hint: "Pass the correct number of arguments.".to_string(),
+                                    code: "E020".to_string(),
+                                    message: format!("unknown field '{}' on module '{}'", method_name, mod_name),
+                                    hint,
                                 });
-                            } else {
-                                for (i, arg) in args.iter().enumerate() {
-                                    let arg_type = self.infer_expr(arg);
-                                    let expected_type = &params[i];
-                                    if !self.types_match(expected_type, &arg_type)
-                                        && arg_type != Type::Basic("unknown".to_string())
-                                        && expected_type != &Type::Basic("unknown".to_string())
-                                    {
-                                        self.errors.push(SemanticError {
-                                            line: 0,
-                                            column: 0,
-                                            code: "E005".to_string(),
-                                            message: format!(
-                                                "wrong argument type in call to '{}.{}': expected '{:?}', found '{:?}'",
-                                                mod_name, method_name, expected_type, arg_type
-                                            ),
-                                            hint: "Check the parameter types of the function.".to_string(),
-                                        });
-                                    }
-                                }
+                                return Type::Basic("unknown".to_string());
                             }
-                            return ret_type.clone().unwrap_or(Type::Basic("void".to_string()));
                         }
                     }
 
@@ -1303,6 +1381,53 @@ impl TypeChecker {
                                 _ => {}
                             }
                         }
+                        Type::Basic(name) if name == "HttpServer" => {
+                            match method_name.as_str() {
+                                "route" => {
+                                    if arg_types.len() != 2 {
+                                        self.errors.push(SemanticError {
+                                            line: 0,
+                                            column: 0,
+                                            code: "E004".to_string(),
+                                            message: format!("HttpServer.route expects 2 arguments, found {}", arg_types.len()),
+                                            hint: "Pass route path and handler function.".to_string(),
+                                        });
+                                    } else {
+                                        if arg_types[0] != Type::Basic("string".to_string()) {
+                                            self.errors.push(SemanticError {
+                                                line: 0,
+                                                column: 0,
+                                                code: "E005".to_string(),
+                                                message: format!("HttpServer.route first argument must be string, found {:?}", arg_types[0]),
+                                                hint: "Pass the route path string.".to_string(),
+                                            });
+                                        }
+                                    }
+                                    return Type::Basic("void".to_string());
+                                }
+                                "start" => {
+                                    if !arg_types.is_empty() {
+                                        self.errors.push(SemanticError {
+                                            line: 0,
+                                            column: 0,
+                                            code: "E004".to_string(),
+                                            message: format!("HttpServer.start expects 0 arguments, found {}", arg_types.len()),
+                                            hint: "Do not pass any arguments.".to_string(),
+                                        });
+                                    }
+                                    return Type::Basic("void".to_string());
+                                }
+                                _ => {
+                                    self.errors.push(SemanticError {
+                                        line: 0,
+                                        column: 0,
+                                        code: "E020".to_string(),
+                                        message: format!("unknown method '{}' on HttpServer", method_name),
+                                        hint: "Available methods are: route, start".to_string(),
+                                    });
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1314,17 +1439,56 @@ impl TypeChecker {
             }
             Expr::FieldAccess { expr: inner, field } => {
                 if let Expr::Ident(mod_name) = &**inner {
-                    self.mark_import_used(mod_name);
-                    if let Some(mod_syms) = self.imported_modules.get(mod_name) {
+                    if let Some(mod_syms) = self.imported_modules.get(mod_name).cloned() {
+                        self.mark_import_used(mod_name);
                         if let Some(sym_info) = mod_syms.get(field) {
                             return match sym_info {
                                 SymbolInfo::Variable { ty: t, .. } => t.clone(),
                                 SymbolInfo::Function { ret_type, .. } => ret_type.clone().unwrap_or(Type::Basic("void".to_string())),
                             };
+                        } else {
+                            let candidates: Vec<&str> = mod_syms.keys().map(|s| s.as_str()).collect();
+                            let suggestion = find_closest(field, candidates);
+                            let hint = if let Some(suggest) = suggestion {
+                                format!("did you mean '{}'?", suggest)
+                            } else {
+                                format!("Check the module definition for '{}'.", field)
+                            };
+                            self.errors.push(SemanticError {
+                                line: 0,
+                                column: 0,
+                                code: "E020".to_string(),
+                                message: format!("unknown field '{}' on module '{}'", field, mod_name),
+                                hint,
+                            });
+                            return Type::Basic("unknown".to_string());
                         }
                     }
                 }
-                self.infer_expr(inner);
+                let inner_ty = self.infer_expr(inner);
+                if let Type::Basic(struct_name) = &inner_ty {
+                    if let Some(fields) = self.struct_fields.get(struct_name) {
+                        if let Some(f) = fields.iter().find(|f| &f.name == field) {
+                            return f.type_ann.clone();
+                        } else {
+                            let candidates: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+                            let suggestion = find_closest(field, candidates);
+                            let hint = if let Some(suggest) = suggestion {
+                                format!("did you mean '{}'?", suggest)
+                            } else {
+                                format!("Check the type definition for '{}'.", field)
+                            };
+                            self.errors.push(SemanticError {
+                                line: 0,
+                                column: 0,
+                                code: "E020".to_string(),
+                                message: format!("unknown field '{}' on type '{}'", field, struct_name),
+                                hint,
+                            });
+                            return Type::Basic("unknown".to_string());
+                        }
+                    }
+                }
                 Type::Basic("unknown".to_string())
             }
             Expr::TryExpr(inner) => {
@@ -1399,6 +1563,7 @@ impl TypeChecker {
                     }
                 }
             }
+            Expr::NamedArg { name: _, value } => self.infer_expr(value),
         }
     }
 
@@ -1468,6 +1633,64 @@ impl TypeChecker {
             _ => false,
         }
     }
+
+    fn get_var_candidates(&self) -> Vec<String> {
+        let mut candidates = Vec::new();
+        for scope in &self.table.scopes {
+            for name in scope.keys() {
+                candidates.push(name.clone());
+            }
+        }
+        candidates
+    }
+
+    fn get_fn_candidates(&self) -> Vec<String> {
+        let mut candidates = Vec::new();
+        for scope in &self.table.scopes {
+            for (name, info) in scope {
+                if let SymbolInfo::Function { .. } = info {
+                    candidates.push(name.clone());
+                }
+            }
+        }
+        candidates
+    }
+}
+
+fn levenshtein_distance(s1: &str, s2: &str) -> usize {
+    let len1 = s1.chars().count();
+    let len2 = s2.chars().count();
+    if len1 == 0 { return len2; }
+    if len2 == 0 { return len1; }
+
+    let mut row: Vec<usize> = (0..=len2).collect();
+    for (i, c1) in s1.chars().enumerate() {
+        let mut prev = i;
+        row[0] = i + 1;
+        for (j, c2) in s2.chars().enumerate() {
+            let temp = row[j + 1];
+            row[j + 1] = std::cmp::min(
+                std::cmp::min(row[j + 1] + 1, row[j] + 1),
+                prev + if c1 == c2 { 0 } else { 1 }
+            );
+            prev = temp;
+        }
+    }
+    row[len2]
+}
+
+fn find_closest(name: &str, candidates: Vec<&str>) -> Option<String> {
+    let mut best_dist = usize::MAX;
+    let mut best_candidate = None;
+    for cand in candidates {
+        let dist = levenshtein_distance(name, cand);
+        let threshold = if name.len() <= 3 { 1 } else { 2 };
+        if dist <= threshold && dist < best_dist {
+            best_dist = dist;
+            best_candidate = Some(cand.to_string());
+        }
+    }
+    best_candidate
 }
 
 #[cfg(test)]
@@ -1662,5 +1885,63 @@ task main
 ";
         let warnings = check_warnings(code);
         assert!(warnings.is_empty(), "Expected no warnings, got {:?}", warnings);
+    }
+
+    #[test]
+    fn test_did_you_mean_variable() {
+        let code = "
+task main
+    name = 42
+    show(naem)
+";
+        let errors = check(code);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E002");
+        assert_eq!(errors[0].hint, "did you mean 'name'?");
+    }
+
+    #[test]
+    fn test_did_you_mean_function() {
+        let code = "
+fn hello() -> int
+    return 42
+
+task main
+    x = hillo()
+";
+        let errors = check(code);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E003");
+        assert_eq!(errors[0].hint, "did you mean 'hello'?");
+    }
+
+    #[test]
+    fn test_did_you_mean_field() {
+        let code = "
+type User
+    name: string
+    age: int
+
+task main
+    u = User()
+    show(u.naem)
+";
+        let errors = check(code);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E020");
+        assert_eq!(errors[0].hint, "did you mean 'name'?");
+    }
+
+    #[test]
+    fn test_did_you_mean_module_field() {
+        let code = "
+use io
+task main
+    io.shw(\"hello\")
+";
+        let errors = check(code);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, "E020");
+        assert_eq!(errors[0].hint, "did you mean 'show'?");
     }
 }

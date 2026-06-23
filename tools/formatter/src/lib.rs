@@ -494,6 +494,11 @@ impl Formatter {
                 }
                 self.indent_level -= 1;
             }
+            Expr::NamedArg { name, value } => {
+                self.out.push_str(name);
+                self.out.push_str(": ");
+                self.format_expr(value);
+            }
         }
     }
 }

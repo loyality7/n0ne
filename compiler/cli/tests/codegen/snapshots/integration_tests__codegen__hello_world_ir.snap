@@ -1,5 +1,6 @@
 ---
 source: compiler/cli/tests/codegen/mod.rs
+assertion_line: 51
 expression: ir
 ---
 @.str.0 = private unnamed_addr constant [12 x i8] c"hello world\00", align 1
@@ -41,8 +42,12 @@ declare ptr @n0_json_encode_bool(i64)
 declare ptr @n0_json_encode_list(ptr)
 declare ptr @n0_json_encode_map(ptr)
 declare ptr @n0_json_decode(ptr)
-declare ptr @n0_http_get(ptr)
-declare ptr @n0_http_post(ptr, ptr)
+declare ptr @n0_http_get(ptr, ptr)
+declare ptr @n0_http_post(ptr, ptr, ptr)
+declare ptr @n0_http_get_json(ptr, ptr)
+declare ptr @n0_http_server(i64)
+declare void @n0_route(ptr, ptr, ptr)
+declare void @n0_start(ptr)
 declare i64 @n0_str_len(ptr)
 declare i64 @n0_str_contains(ptr, ptr)
 declare i64 @n0_str_starts_with(ptr, ptr)

@@ -52,7 +52,10 @@ impl LLVMGenerator {
                 if let Some((enum_decl, _, _)) = self.find_variant(name) {
                     return Type::Basic(enum_decl.name.clone());
                 }
-                if let Some((_, ty)) = self.variables.get(name) {
+                if let Some(f_decl) = self.functions.get(name) {
+                    let param_types = f_decl.params.iter().map(|p| p.type_ann.clone()).collect();
+                    Type::Function(param_types, Box::new(f_decl.return_type.clone().unwrap_or(Type::Basic("void".to_string()))))
+                } else if let Some((_, ty)) = self.variables.get(name) {
                     ty.clone()
                 } else if let Some(ty) = self.global_consts.get(name) {
                     ty.clone()
@@ -125,8 +128,9 @@ impl LLVMGenerator {
                                     ("fs", "list") => return Type::Result(Box::new(Type::List(Box::new(Type::Basic("string".to_string()))))),
                                     ("json", "encode") => return Type::Basic("string".to_string()),
                                     ("json", "decode") => return Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))))),
-                                    ("http", "get") => return Type::Basic("string".to_string()),
-                                    ("http", "post") => return Type::Basic("string".to_string()),
+                                                                         ("http", "get") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
+                                                                         ("http", "post") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
+                                     ("http", "get_json") => return Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))))),
                                     _ => {}
                                 }
                             } else if let Some(f_decl) = self.functions.get(method_name) {
@@ -202,6 +206,12 @@ impl LLVMGenerator {
                                 "has" => return Type::Basic("bool".to_string()),
                                 "keys" => return Type::List(Box::new(Type::Basic("string".to_string()))),
                                 "values" => return Type::List(val_ty.clone()),
+                                _ => {}
+                            }
+                        }
+                        Type::Basic(name) if name == "HttpServer" => {
+                            match method_name.as_str() {
+                                "route" | "start" => return Type::Basic("void".to_string()),
                                 _ => {}
                             }
                         }
@@ -298,6 +308,7 @@ impl LLVMGenerator {
                     _ => Type::Basic("unknown".to_string()),
                 }
             }
+            Expr::NamedArg { name: _, value } => self.infer_expr_type(value),
             _ => Type::Basic("int".to_string()),
         }
     }

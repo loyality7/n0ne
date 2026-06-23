@@ -7,6 +7,7 @@ int sprintf(char* str, const char* format, ...);
 int snprintf(char* str, size_t size, const char* format, ...);
 void exit(int status);
 void* malloc(size_t size);
+void* realloc(void* ptr, size_t size);
 void* memset(void* ptr, int value, size_t num);
 void free(void* ptr);
 size_t strlen(const char* str);
@@ -19,6 +20,9 @@ void* memcpy(void* dest, const void* src, size_t n);
 char* strtok(char* str, const char* delimiters);
 long long strtoll(const char* str, char** endptr, int base);
 double strtod(const char* str, char** endptr);
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
 #else
 #include <stdio.h>
 #include <stdlib.h>
@@ -703,6 +707,8 @@ extern size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream);
 extern int fseek(FILE* stream, long int offset, int whence);
 extern long int ftell(FILE* stream);
 extern int remove(const char* filename);
+extern FILE* _popen(const char* command, const char* mode);
+extern int _pclose(FILE* stream);
 #endif
 
 #ifdef _WIN32
@@ -1102,8 +1108,115 @@ void* n0_json_decode(const char* s) {
     return n0_make_ok(map);
 }
 
-char* n0_http_get(const char* url) {
-    return "{}";
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
+void* n0_http_get(const char* url, void* timeout_ptr) {
+    int64_t timeout_secs = (int64_t)timeout_ptr;
+    if (timeout_secs <= 0) timeout_secs = 30;
+
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), "curl -L -s -g -m %lld \"%s\"", (long long)timeout_secs, url);
+
+    FILE* fp = popen(cmd, "r");
+    if (!fp) {
+        return n0_make_err("Failed to execute curl");
+    }
+
+    char* res = malloc(4096);
+    size_t cap = 4096;
+    size_t len = 0;
+
+    while (1) {
+        if (len + 1024 >= cap) {
+            cap *= 2;
+            char* new_res = realloc(res, cap);
+            if (!new_res) {
+                free(res);
+                pclose(fp);
+                return n0_make_err("Out of memory");
+            }
+            res = new_res;
+        }
+        size_t n = fread(res + len, 1, 1024, fp);
+        if (n <= 0) break;
+        len += n;
+    }
+
+    int status = pclose(fp);
+    if (status != 0 && len == 0) {
+        free(res);
+        return n0_make_err("HTTP request failed or timed out");
+    }
+
+    res[len] = '\0';
+    return n0_make_ok(res);
+}
+
+void* n0_http_post(const char* url, const char* body, void* timeout_ptr) {
+    int64_t timeout_secs = (int64_t)timeout_ptr;
+    if (timeout_secs <= 0) timeout_secs = 30;
+
+    const char* temp_filename = "__n0_post_body.tmp";
+    FILE* temp_fp = fopen(temp_filename, "wb");
+    if (!temp_fp) {
+        return n0_make_err("Failed to create temporary file for POST body");
+    }
+    fwrite(body, 1, strlen(body), temp_fp);
+    fclose(temp_fp);
+
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), "curl -L -s -g -m %lld -d @%s \"%s\"", (long long)timeout_secs, temp_filename, url);
+
+    FILE* fp = popen(cmd, "r");
+    if (!fp) {
+        remove(temp_filename);
+        return n0_make_err("Failed to execute curl");
+    }
+
+    char* res = malloc(4096);
+    size_t cap = 4096;
+    size_t len = 0;
+
+    while (1) {
+        if (len + 1024 >= cap) {
+            cap *= 2;
+            char* new_res = realloc(res, cap);
+            if (!new_res) {
+                free(res);
+                pclose(fp);
+                remove(temp_filename);
+                return n0_make_err("Out of memory");
+            }
+            res = new_res;
+        }
+        size_t n = fread(res + len, 1, 1024, fp);
+        if (n <= 0) break;
+        len += n;
+    }
+
+    int status = pclose(fp);
+    remove(temp_filename);
+
+    if (status != 0 && len == 0) {
+        free(res);
+        return n0_make_err("HTTP request failed or timed out");
+    }
+
+    res[len] = '\0';
+    return n0_make_ok(res);
+}
+
+void* n0_http_get_json(const char* url, void* timeout_ptr) {
+    void* res = n0_http_get(url, timeout_ptr);
+    N0Result* result = (N0Result*)res;
+    if (result->is_err) {
+        return result;
+    }
+    void* decoded = n0_json_decode(result->value);
+    return decoded;
 }
 
 
@@ -1224,7 +1337,245 @@ void n0_div_check(int64_t divisor, const char* file_name, int64_t line) {
     }
 }
 
-char* n0_http_post(const char* url, const char* body) {
-    return "{}";
+// HTTP Server Structures
+typedef struct {
+    int port;
+    char* routes[128];
+    void* handlers[128];
+    int route_count;
+} HttpServer;
+
+void* n0_http_server(int64_t port) {
+    HttpServer* s = (HttpServer*)malloc(sizeof(HttpServer));
+    if (s) {
+        s->port = (int)port;
+        s->route_count = 0;
+    }
+    return s;
+}
+
+void n0_route(void* server, char* path, void* handler) {
+    HttpServer* s = (HttpServer*)server;
+    if (s && s->route_count < 128) {
+        char* p = malloc(strlen(path) + 1);
+        if (p) {
+            strcpy(p, path);
+            s->routes[s->route_count] = p;
+            s->handlers[s->route_count] = handler;
+            s->route_count++;
+        }
+    }
+}
+
+// Windows-specific Winsock declarations and calls
+#ifdef _WIN32
+#pragma comment(lib, "ws2_32.lib")
+
+struct WSAData {
+    unsigned short wVersion;
+    unsigned short wHighVersion;
+    char szDescription[257];
+    char szSystemStatus[129];
+    unsigned short iMaxSockets;
+    unsigned short iMaxUdpDg;
+    char* lpVendorInfo;
+};
+
+struct sockaddr {
+    unsigned short sa_family;
+    char sa_data[14];
+};
+
+struct in_addr {
+    unsigned long s_addr;
+};
+
+struct sockaddr_in {
+    short sin_family;
+    unsigned short sin_port;
+    struct in_addr sin_addr;
+    char sin_zero[8];
+};
+
+typedef size_t u_int;
+typedef u_int SOCKET;
+
+#define INVALID_SOCKET (SOCKET)(~0)
+#define SOCKET_ERROR            (-1)
+#define AF_INET 2
+#define SOCK_STREAM 1
+#define SOL_SOCKET 0xffff
+#define SO_REUSEADDR 0x0004
+#define INADDR_ANY 0
+
+int WSAStartup(unsigned short wVersionRequested, struct WSAData* lpWSAData);
+SOCKET socket(int af, int type, int protocol);
+int bind(SOCKET s, const struct sockaddr* name, int namelen);
+int listen(SOCKET s, int backlog);
+SOCKET accept(SOCKET s, struct sockaddr* addr, int* addrlen);
+int recv(SOCKET s, char* buf, int len, int flags);
+int send(SOCKET s, const char* buf, int len, int flags);
+int closesocket(SOCKET s);
+int WSACleanup(void);
+int setsockopt(SOCKET s, int level, int optname, const char* optval, int optlen);
+
+unsigned short htons(unsigned short hostshort);
+unsigned long inet_addr(const char* cp);
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define closesocket close
+#endif
+
+void n0_start(void* server) {
+    HttpServer* s = (HttpServer*)server;
+    if (!s) return;
+
+#ifdef _WIN32
+    struct WSAData wsa;
+    if (WSAStartup(0x0202, &wsa) != 0) {
+        return;
+    }
+#endif
+
+    SOCKET server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == INVALID_SOCKET) {
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return;
+    }
+
+    int opt = 1;
+#ifdef _WIN32
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+#else
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
+
+    struct sockaddr_in address;
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(s->port);
+
+    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
+        closesocket(server_fd);
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return;
+    }
+
+    if (listen(server_fd, 10) < 0) {
+        closesocket(server_fd);
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return;
+    }
+
+    while (1) {
+        struct sockaddr_in client_addr;
+        int addr_len = sizeof(client_addr);
+        SOCKET client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &addr_len);
+        if (client_fd == INVALID_SOCKET) {
+            continue;
+        }
+
+        char buffer[4096];
+        int received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+        if (received <= 0) {
+            closesocket(client_fd);
+            continue;
+        }
+        buffer[received] = '\0';
+
+        char method[32] = {0};
+        char path[512] = {0};
+        int m_idx = 0, p_idx = 0, i = 0;
+        while (buffer[i] == ' ' && buffer[i] != '\0') i++;
+        while (buffer[i] != ' ' && buffer[i] != '\0' && m_idx < 31) {
+            method[m_idx++] = buffer[i++];
+        }
+        while (buffer[i] == ' ' && buffer[i] != '\0') i++;
+        while (buffer[i] != ' ' && buffer[i] != '\0' && p_idx < 511) {
+            path[p_idx++] = buffer[i++];
+        }
+
+        char* body_start = strstr(buffer, "\r\n\r\n");
+        if (body_start) {
+            body_start += 4;
+        } else {
+            body_start = "";
+        }
+
+        void* handler = NULL;
+        for (int r = 0; r < s->route_count; r++) {
+            if (strcmp(s->routes[r], path) == 0) {
+                handler = s->handlers[r];
+                break;
+            }
+        }
+
+        if (handler) {
+            void* req = malloc(40);
+            memset(req, 0, 40);
+            
+            char* m = malloc(strlen(method) + 1);
+            strcpy(m, method);
+            *(char**)((char*)req + 8) = m;
+            
+            char* p = malloc(strlen(path) + 1);
+            strcpy(p, path);
+            *(char**)((char*)req + 16) = p;
+            
+            char* b = malloc(strlen(body_start) + 1);
+            strcpy(b, body_start);
+            *(char**)((char*)req + 24) = b;
+            
+            void* headers = malloc(32);
+            memset(headers, 0, 32);
+            *(void**)((char*)req + 32) = headers;
+
+            typedef void* (*HandlerType)(void*);
+            void* resp = ((HandlerType)handler)(req);
+
+            if (resp) {
+                int64_t status = *(int64_t*)((char*)resp + 8);
+                char* body = *(char**)((char*)resp + 16);
+                if (!body) body = "";
+
+                char response_headers[1024];
+                int len = snprintf(response_headers, sizeof(response_headers),
+                    "HTTP/1.1 %lld OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s",
+                    (long long)status, (int)strlen(body), body);
+                send(client_fd, response_headers, len, 0);
+            } else {
+                const char* internal_error = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+                send(client_fd, internal_error, strlen(internal_error), 0);
+            }
+
+            free(m);
+            free(p);
+            free(b);
+            free(headers);
+            free(req);
+        } else {
+            const char* not_found = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found";
+            send(client_fd, not_found, strlen(not_found), 0);
+        }
+
+        closesocket(client_fd);
+    }
+
+    closesocket(server_fd);
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 "#;

@@ -654,3 +654,196 @@ task main
     assert!(stderr.contains(":5"), "expected stderr to contain line 5 location. Stderr:\n{}", stderr);
 }
 
+#[test]
+fn test_stdlib_json_encode() {
+    let source = "
+use json
+task main
+    m = {}
+    m.set(\"name\", \"n0ne\")
+    s = json.encode(m)
+    show(s)
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "{\"name\": \"n0ne\"}");
+}
+
+#[test]
+fn test_stdlib_json_decode() {
+    let source = "
+use json
+task main
+    s = \"{\\\"name\\\": \\\"n0ne\\\"}\"
+    res = json.decode(s)
+    if res.is_ok
+        m = res.unwrap()
+        v = m.get(\"name\")
+        if v.is_some
+            show(v.unwrap())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "n0ne");
+}
+
+#[test]
+fn test_stdlib_json_decode_invalid() {
+    let source = "
+use json
+task main
+    s = \"invalid json\"
+    res = json.decode(s)
+    if res.is_err
+        show(\"error correctly caught\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "error correctly caught");
+}
+
+#[test]
+fn test_stdlib_json_decode_nested() {
+    let source = "
+use json
+task main
+    s = \"{\\\"nested\\\": {\\\"foo\\\": \\\"bar\\\"}}\"
+    res = json.decode(s)
+    if res.is_ok
+        m = res.unwrap()
+        v = m.get(\"nested\")
+        if v.is_some
+            show(v.unwrap())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "{\"foo\": \"bar\"}");
+}
+
+use std::net::TcpListener;
+use std::thread;
+use std::io::{Read, Write};
+
+#[test]
+fn test_stdlib_http_get() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        if let Ok((mut socket, _)) = listener.accept() {
+            let mut buf = [0; 1024];
+            let _ = socket.read(&mut buf);
+            let response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\nConnection: close\r\n\r\nHello, HTTP!";
+            let _ = socket.write_all(response.as_bytes());
+        }
+    });
+
+    let source = format!("
+use http
+task main
+    res = http.get(\"http://127.0.0.1:{}/hello\")
+    if res.is_ok
+        show(res.unwrap())
+", port);
+    let res = crate::helpers::run_n0ne(&source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "Hello, HTTP!");
+}
+
+#[test]
+fn test_stdlib_http_post() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        if let Ok((mut socket, _)) = listener.accept() {
+            let mut buf = [0; 2048];
+            let n = socket.read(&mut buf).unwrap_or(0);
+            let req_str = String::from_utf8_lossy(&buf[..n]).into_owned();
+            let _ = tx.send(req_str);
+            let response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
+            let _ = socket.write_all(response.as_bytes());
+        }
+    });
+
+    let source = format!("
+use http
+task main
+    res = http.post(\"http://127.0.0.1:{}/post\", \"foo=bar\")
+    if res.is_ok
+        show(res.unwrap())
+", port);
+    let res = crate::helpers::run_n0ne(&source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "OK");
+
+    let req = rx.recv().unwrap();
+    assert!(req.contains("POST /post HTTP/1.1"));
+    assert!(req.contains("foo=bar"));
+}
+
+#[test]
+fn test_stdlib_http_get_json() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        if let Ok((mut socket, _)) = listener.accept() {
+            let mut buf = [0; 1024];
+            let _ = socket.read(&mut buf);
+            let response = "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: 17\r\nConnection: close\r\n\r\n{\"name\": \"n0ne\"}";
+            let _ = socket.write_all(response.as_bytes());
+        }
+    });
+
+    let source = format!("
+use http
+task main
+    res = http.get_json(\"http://127.0.0.1:{}/\")
+    if res.is_ok
+        m = res.unwrap()
+        name = m.get(\"name\")
+        if name.is_some
+            show(name.unwrap())
+", port);
+    let res = crate::helpers::run_n0ne(&source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "n0ne");
+}
+
+#[test]
+fn test_stdlib_http_get_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        if let Ok((mut socket, _)) = listener.accept() {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let response = "HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
+            let _ = socket.write_all(response.as_bytes());
+        }
+    });
+
+    let source = format!("
+use http
+task main
+    res = http.get(\"http://127.0.0.1:{}/\", timeout: 1)
+    if res.is_err
+        show(\"timeout caught\")
+", port);
+    let res = crate::helpers::run_n0ne(&source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "timeout caught");
+}
+
+#[test]
+fn test_stdlib_http_error() {
+    let source = "
+use http
+task main
+    res = http.get(\"http://127.0.0.1:1/\")
+    if res.is_err
+        show(\"error caught\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "error caught");
+}
+

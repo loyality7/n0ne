@@ -212,6 +212,10 @@ pub enum Expr {
         index: Box<Expr>,
         line: usize,
     },
+    NamedArg {
+        name: String,
+        value: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -58,6 +58,31 @@ impl LLVMGenerator {
     }
 
     pub fn generate(&mut self, ast: &Program) -> String {
+        // Pre-populate standard structs
+        self.structs.insert(
+            "HttpRequest".to_string(),
+            ast::TypeDecl {
+                name: "HttpRequest".to_string(),
+                fields: vec![
+                    ast::Field { name: "method".to_string(), type_ann: Type::Basic("string".to_string()) },
+                    ast::Field { name: "path".to_string(), type_ann: Type::Basic("string".to_string()) },
+                    ast::Field { name: "body".to_string(), type_ann: Type::Basic("string".to_string()) },
+                    ast::Field { name: "headers".to_string(), type_ann: Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))) },
+                ],
+            },
+        );
+        self.structs.insert(
+            "HttpResponse".to_string(),
+            ast::TypeDecl {
+                name: "HttpResponse".to_string(),
+                fields: vec![
+                    ast::Field { name: "status".to_string(), type_ann: Type::Basic("int".to_string()) },
+                    ast::Field { name: "body".to_string(), type_ann: Type::Basic("string".to_string()) },
+                    ast::Field { name: "headers".to_string(), type_ann: Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))) },
+                ],
+            },
+        );
+
         // Collect structs, function return types, and global constants
         for decl in &ast.decls {
             match decl {
@@ -121,8 +146,12 @@ impl LLVMGenerator {
         self.globals.push_str("declare ptr @n0_json_encode_list(ptr)\n");
         self.globals.push_str("declare ptr @n0_json_encode_map(ptr)\n");
         self.globals.push_str("declare ptr @n0_json_decode(ptr)\n");
-        self.globals.push_str("declare ptr @n0_http_get(ptr)\n");
-        self.globals.push_str("declare ptr @n0_http_post(ptr, ptr)\n");
+        self.globals.push_str("declare ptr @n0_http_get(ptr, ptr)\n");
+        self.globals.push_str("declare ptr @n0_http_post(ptr, ptr, ptr)\n");
+        self.globals.push_str("declare ptr @n0_http_get_json(ptr, ptr)\n");
+        self.globals.push_str("declare ptr @n0_http_server(i64)\n");
+        self.globals.push_str("declare void @n0_route(ptr, ptr, ptr)\n");
+        self.globals.push_str("declare void @n0_start(ptr)\n");
         
         // String primitive methods
         self.globals.push_str("declare i64 @n0_str_len(ptr)\n");

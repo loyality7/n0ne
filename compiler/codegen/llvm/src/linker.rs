@@ -121,6 +121,7 @@ pub fn compile_llvm(ast: &Program, out_path: &Path, debug: bool, src_path: Optio
 
     if cfg!(target_os = "windows") {
         cmd.arg("-target").arg("x86_64-pc-windows-msvc");
+        cmd.arg("-lws2_32");
     }
 
     let output = cmd.output()?;

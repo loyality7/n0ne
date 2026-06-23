@@ -183,7 +183,26 @@ impl Parser {
                 let mut args = Vec::new();
                 if !self.check(TokenKind::RParen) {
                     loop {
-                        args.push(self.parse_expr());
+                        let is_named_arg = if let TokenKind::Ident(_) = self.peek_kind() {
+                            self.peek_next().kind == TokenKind::Colon
+                        } else {
+                            false
+                        };
+                        if is_named_arg {
+                            let ident_tok = self.advance().clone();
+                            let name = match ident_tok.kind {
+                                TokenKind::Ident(s) => s,
+                                _ => unreachable!(),
+                            };
+                            self.consume(TokenKind::Colon);
+                            let value = self.parse_expr();
+                            args.push(Expr::NamedArg {
+                                name,
+                                value: Box::new(value),
+                            });
+                        } else {
+                            args.push(self.parse_expr());
+                        }
                         if self.check(TokenKind::Comma) {
                             self.advance();
                         } else {
