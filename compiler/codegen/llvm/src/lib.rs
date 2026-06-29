@@ -153,6 +153,18 @@ impl LLVMGenerator {
         self.globals.push_str("declare void @n0_route(ptr, ptr, ptr)\n");
         self.globals.push_str("declare void @n0_start(ptr)\n");
         
+        // Math stdlib
+        self.globals.push_str("declare double @n0_math_abs(double)\n");
+        self.globals.push_str("declare double @n0_math_sqrt(double)\n");
+        self.globals.push_str("declare double @n0_math_floor(double)\n");
+        self.globals.push_str("declare double @n0_math_ceil(double)\n");
+        self.globals.push_str("declare double @n0_math_round(double)\n");
+        self.globals.push_str("declare double @n0_math_min(double, double)\n");
+        self.globals.push_str("declare double @n0_math_max(double, double)\n");
+        self.globals.push_str("declare double @n0_math_clamp(double, double, double)\n");
+        self.globals.push_str("declare double @n0_math_random()\n");
+        self.globals.push_str("declare i64 @n0_math_random_int(i64, i64)\n");
+        
         // String primitive methods
         self.globals.push_str("declare i64 @n0_str_len(ptr)\n");
         self.globals.push_str("declare i64 @n0_str_contains(ptr, ptr)\n");

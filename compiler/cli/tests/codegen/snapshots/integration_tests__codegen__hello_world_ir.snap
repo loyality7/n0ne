@@ -1,6 +1,5 @@
 ---
 source: compiler/cli/tests/codegen/mod.rs
-assertion_line: 51
 expression: ir
 ---
 @.str.0 = private unnamed_addr constant [12 x i8] c"hello world\00", align 1
@@ -48,6 +47,16 @@ declare ptr @n0_http_get_json(ptr, ptr)
 declare ptr @n0_http_server(i64)
 declare void @n0_route(ptr, ptr, ptr)
 declare void @n0_start(ptr)
+declare double @n0_math_abs(double)
+declare double @n0_math_sqrt(double)
+declare double @n0_math_floor(double)
+declare double @n0_math_ceil(double)
+declare double @n0_math_round(double)
+declare double @n0_math_min(double, double)
+declare double @n0_math_max(double, double)
+declare double @n0_math_clamp(double, double, double)
+declare double @n0_math_random()
+declare i64 @n0_math_random_int(i64, i64)
 declare i64 @n0_str_len(ptr)
 declare i64 @n0_str_contains(ptr, ptr)
 declare i64 @n0_str_starts_with(ptr, ptr)

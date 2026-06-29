@@ -847,3 +847,87 @@ task main
     assert_eq!(res.stdout.trim(), "error caught");
 }
 
+// SECTION — STDLIB MATH
+test!(test_stdlib_math_abs,
+    source: "use math\ntask main\n    show(math.abs(-5.0).to_string())\n    show(math.abs(3.0).to_string())\n",
+    stdout: "5.0\n3.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_sqrt,
+    source: "use math\ntask main\n    show(math.sqrt(9.0).to_string())\n    show(math.sqrt(16.0).to_string())\n",
+    stdout: "3.0\n4.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_floor,
+    source: "use math\ntask main\n    show(math.floor(3.7).to_string())\n    show(math.floor(-2.3).to_string())\n",
+    stdout: "3.0\n-3.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_ceil,
+    source: "use math\ntask main\n    show(math.ceil(3.2).to_string())\n    show(math.ceil(-2.7).to_string())\n",
+    stdout: "4.0\n-2.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_round,
+    source: "use math\ntask main\n    show(math.round(3.5).to_string())\n    show(math.round(2.3).to_string())\n",
+    stdout: "4.0\n2.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_min_max,
+    source: "use math\ntask main\n    show(math.min(3.0, 7.0).to_string())\n    show(math.max(3.0, 7.0).to_string())\n",
+    stdout: "3.0\n7.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_clamp,
+    source: "use math\ntask main\n    show(math.clamp(15.0, 0.0, 10.0).to_string())\n    show(math.clamp(-5.0, 0.0, 10.0).to_string())\n    show(math.clamp(5.0, 0.0, 10.0).to_string())\n",
+    stdout: "10.0\n0.0\n5.0\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_pi,
+    source: "use math\ntask main\n    show(math.PI.to_string())\n",
+    stdout: "3.141593\n",
+    exit: 0
+);
+
+test!(test_stdlib_math_e,
+    source: "use math\ntask main\n    show(math.E.to_string())\n",
+    stdout: "2.718282\n",
+    exit: 0
+);
+
+#[test]
+fn test_stdlib_math_random() {
+    let source = "
+use math
+task main
+    r = math.random()
+    if r >= 0.0
+        if r <= 1.0
+            show(\"in range\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "in range");
+}
+
+#[test]
+fn test_stdlib_math_random_int() {
+    let source = "
+use math
+task main
+    r = math.random_int(1, 10)
+    if r >= 1
+        if r <= 10
+            show(\"in range\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "in range");
+}

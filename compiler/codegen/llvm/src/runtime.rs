@@ -1337,6 +1337,78 @@ void n0_div_check(int64_t divisor, const char* file_name, int64_t line) {
     }
 }
 
+// Math stdlib
+#ifdef _WIN32
+double fabs(double x);
+double sqrt(double x);
+double floor(double x);
+double ceil(double x);
+double round(double x);
+int rand(void);
+void srand(unsigned int seed);
+unsigned int _getpid(void);
+#else
+#include <math.h>
+#include <time.h>
+#endif
+
+static int n0_math_seeded = 0;
+static void n0_math_seed_once(void) {
+    if (!n0_math_seeded) {
+#ifdef _WIN32
+        srand((unsigned int)_getpid() ^ (unsigned int)42);
+#else
+        srand((unsigned int)time(NULL) ^ (unsigned int)getpid());
+#endif
+        n0_math_seeded = 1;
+    }
+}
+
+double n0_math_abs(double x) {
+    return x < 0 ? -x : x;
+}
+
+double n0_math_sqrt(double x) {
+    return sqrt(x);
+}
+
+double n0_math_floor(double x) {
+    return floor(x);
+}
+
+double n0_math_ceil(double x) {
+    return ceil(x);
+}
+
+double n0_math_round(double x) {
+    return round(x);
+}
+
+double n0_math_min(double a, double b) {
+    return a < b ? a : b;
+}
+
+double n0_math_max(double a, double b) {
+    return a > b ? a : b;
+}
+
+double n0_math_clamp(double val, double low, double high) {
+    if (val < low) return low;
+    if (val > high) return high;
+    return val;
+}
+
+double n0_math_random(void) {
+    n0_math_seed_once();
+    return (double)rand() / (double)32767;
+}
+
+int64_t n0_math_random_int(int64_t min_val, int64_t max_val) {
+    n0_math_seed_once();
+    if (min_val >= max_val) return min_val;
+    return min_val + (rand() % (max_val - min_val + 1));
+}
+
 // HTTP Server Structures
 typedef struct {
     int port;

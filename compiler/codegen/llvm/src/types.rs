@@ -117,7 +117,7 @@ impl LLVMGenerator {
                     }
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() {
-                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" {
                                 match (mod_name.as_str(), method_name.as_str()) {
                                     ("io", "read") => return Type::Basic("string".to_string()),
                                     ("fs", "read") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
@@ -128,9 +128,12 @@ impl LLVMGenerator {
                                     ("fs", "list") => return Type::Result(Box::new(Type::List(Box::new(Type::Basic("string".to_string()))))),
                                     ("json", "encode") => return Type::Basic("string".to_string()),
                                     ("json", "decode") => return Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))))),
-                                                                         ("http", "get") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
-                                                                         ("http", "post") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
-                                     ("http", "get_json") => return Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))))),
+                                    ("http", "get") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
+                                    ("http", "post") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
+                                    ("http", "get_json") => return Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))))),
+                                    ("http", "server") => return Type::Basic("HttpServer".to_string()),
+                                    ("math", "random_int") => return Type::Basic("int".to_string()),
+                                    ("math", "abs") | ("math", "sqrt") | ("math", "floor") | ("math", "ceil") | ("math", "round") | ("math", "min") | ("math", "max") | ("math", "clamp") | ("math", "random") => return Type::Basic("float".to_string()),
                                     _ => {}
                                 }
                             } else if let Some(f_decl) = self.functions.get(method_name) {
@@ -221,6 +224,12 @@ impl LLVMGenerator {
                 Type::Basic("int".to_string())
             }
             Expr::FieldAccess { expr: inner, field } => {
+                // Math constants
+                if let Expr::Ident(mod_name) = &**inner {
+                    if mod_name == "math" && (field == "PI" || field == "E") {
+                        return Type::Basic("float".to_string());
+                    }
+                }
                 let inner_ty = self.infer_expr_type(inner);
                 let type_name = match &inner_ty {
                     Type::Basic(n) => n.clone(),
@@ -259,6 +268,12 @@ impl LLVMGenerator {
                 match inner_ty {
                     Type::Result(t) => *t,
                     _ => Type::Basic("unknown".to_string()),
+                }
+            }
+            Expr::UnaryExpr { op, expr: inner } => {
+                match op {
+                    ast::UnaryOp::Neg => self.infer_expr_type(inner),
+                    ast::UnaryOp::Not => Type::Basic("bool".to_string()),
                 }
             }
             Expr::ListLiteral(items) => {

@@ -229,20 +229,47 @@ impl LLVMGenerator {
                 let l_llvm_ty = self.llvm_type(&l_ty);
 
                 if l_llvm_ty == "double" {
-                    let r = self.next_reg();
-                    let op_instr = match op {
-                        BinOp::Add => "fadd",
-                        BinOp::Sub => "fsub",
-                        BinOp::Mul => "fmul",
-                        BinOp::Div => "fdiv",
-                        BinOp::Mod => "frem",
-                        _ => "fadd",
-                    };
-                    self.body.push_str(&format!(
-                        "    {} = {} double {}, {}\n",
-                        r, op_instr, l_reg, r_reg
-                    ));
-                    r
+                    match op {
+                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+                            let r = self.next_reg();
+                            let op_instr = match op {
+                                BinOp::Add => "fadd",
+                                BinOp::Sub => "fsub",
+                                BinOp::Mul => "fmul",
+                                BinOp::Div => "fdiv",
+                                BinOp::Mod => "frem",
+                                _ => unreachable!(),
+                            };
+                            self.body.push_str(&format!(
+                                "    {} = {} double {}, {}\n",
+                                r, op_instr, l_reg, r_reg
+                            ));
+                            r
+                        }
+                        BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                            let cmp_op = match op {
+                                BinOp::Eq => "oeq",
+                                BinOp::Ne => "one",
+                                BinOp::Lt => "olt",
+                                BinOp::Gt => "ogt",
+                                BinOp::Le => "ole",
+                                BinOp::Ge => "oge",
+                                _ => unreachable!(),
+                            };
+                            let cmp_res = self.next_reg();
+                            self.body.push_str(&format!(
+                                "    {} = fcmp {} double {}, {}\n",
+                                cmp_res, cmp_op, l_reg, r_reg
+                            ));
+                            let r = self.next_reg();
+                            self.body.push_str(&format!(
+                                "    {} = zext i1 {} to i64\n",
+                                r, cmp_res
+                            ));
+                            r
+                        }
+                        _ => "0".to_string(),
+                    }
                 } else if l_llvm_ty == "ptr" {
                     if let BinOp::Add = op {
                         let r = self.next_reg();
@@ -610,7 +637,7 @@ impl LLVMGenerator {
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() && self.global_consts.get(mod_name).is_none() {
-                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" {
                                 if mod_name == "io" && method_name == "show" {
                                     let first = args.first().unwrap();
                                     let arg_reg = self.gen_expr(first);
@@ -685,6 +712,38 @@ impl LLVMGenerator {
                                             // string and unknown types → encode as JSON string
                                             self.body.push_str(&format!("    {} = call ptr @n0_json_encode_string(ptr {})\n", r, arg_reg));
                                         }
+                                    }
+                                    return r;
+                                }
+
+                                // Math module — native double/i64, no ptr casting
+                                if mod_name == "math" {
+                                    // Constants
+                                    if method_name == "PI" || method_name == "E" {
+                                        // handled as field access, shouldn't reach here
+                                        return if method_name == "PI" { "0x400921FB54442D18".to_string() } else { "0x4005BF0A8B145769".to_string() };
+                                    }
+                                    let mut arg_regs = Vec::new();
+                                    for arg in args {
+                                        let reg = self.gen_expr(arg);
+                                        let ty = self.infer_expr_type(arg);
+                                        let llvm_ty = self.llvm_type(&ty);
+                                        if llvm_ty == "i64" && method_name != "random_int" {
+                                            let fr = self.next_reg();
+                                            self.body.push_str(&format!("    {} = sitofp i64 {} to double\n", fr, reg));
+                                            arg_regs.push(format!("double {}", fr));
+                                        } else if llvm_ty == "i64" {
+                                            arg_regs.push(format!("i64 {}", reg));
+                                        } else {
+                                            arg_regs.push(format!("double {}", reg));
+                                        }
+                                    }
+                                    let fn_name = format!("n0_math_{}", method_name);
+                                    let r = self.next_reg();
+                                    if method_name == "random_int" {
+                                        self.body.push_str(&format!("    {} = call i64 @{}({})\n", r, fn_name, arg_regs.join(", ")));
+                                    } else {
+                                        self.body.push_str(&format!("    {} = call double @{}({})\n", r, fn_name, arg_regs.join(", ")));
                                     }
                                     return r;
                                 }
@@ -1029,6 +1088,16 @@ impl LLVMGenerator {
                 }
             }
             Expr::FieldAccess { expr: inner, field } => {
+                // Math constants — return LLVM double hex directly
+                if let Expr::Ident(mod_name) = &**inner {
+                    if mod_name == "math" {
+                        match field.as_str() {
+                            "PI" => return "0x400921FB54442D18".to_string(),  // 3.141592653589793
+                            "E" => return "0x4005BF0A8B145769".to_string(),   // 2.718281828459045
+                            _ => {}
+                        }
+                    }
+                }
                 let ptr_reg = self.gen_expr(inner);
                 let inner_ty = self.infer_expr_type(inner);
                 let type_name = match &inner_ty {

@@ -150,6 +150,20 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
             Symbol::fn_sym_opt("get_json", vec![Type::Basic("string".to_string()), Type::Basic("int".to_string())], 1, Type::Result(Box::new(Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string())))))),
             Symbol::fn_sym("server", vec![Type::Basic("int".to_string())], Type::Basic("HttpServer".to_string())),
         ]),
+        "math" => Some(vec![
+            Symbol::fn_sym("abs", vec![Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("sqrt", vec![Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("floor", vec![Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("ceil", vec![Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("round", vec![Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("min", vec![Type::Basic("float".to_string()), Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("max", vec![Type::Basic("float".to_string()), Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("clamp", vec![Type::Basic("float".to_string()), Type::Basic("float".to_string()), Type::Basic("float".to_string())], Type::Basic("float".to_string())),
+            Symbol::fn_sym("random", vec![], Type::Basic("float".to_string())),
+            Symbol::fn_sym("random_int", vec![Type::Basic("int".to_string()), Type::Basic("int".to_string())], Type::Basic("int".to_string())),
+            Symbol { name: "PI".to_string(), info: SymbolInfo::Variable { ty: Type::Basic("float".to_string()), used: false } },
+            Symbol { name: "E".to_string(), info: SymbolInfo::Variable { ty: Type::Basic("float".to_string()), used: false } },
+        ]),
         _ => None,
     }
 }
