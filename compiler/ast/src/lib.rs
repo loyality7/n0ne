@@ -107,6 +107,27 @@ pub enum Type {
     Function(Vec<Type>, Box<Type>), // fn(T1, T2) -> R
 }
 
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Basic(name) => write!(f, "{}", name),
+            Type::List(ty) => write!(f, "list[{}]", ty),
+            Type::Map(k, v) => write!(f, "map[{}, {}]", k, v),
+            Type::Result(ty) => write!(f, "result[{}]", ty),
+            Type::Option(ty) => write!(f, "option[{}]", ty),
+            Type::Tuple(tys) => {
+                let formatted = tys.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+                write!(f, "({})", formatted)
+            }
+            Type::Function(params, ret) => {
+                let formatted = params.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+                write!(f, "fn({}) -> {}", formatted, ret)
+            }
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub stmts: Vec<Stmt>,

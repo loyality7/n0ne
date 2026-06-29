@@ -117,7 +117,7 @@ impl LLVMGenerator {
                     }
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() {
-                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" || mod_name == "time" {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" || mod_name == "time" || mod_name == "env" || mod_name == "process" || mod_name == "string" {
                                 match (mod_name.as_str(), method_name.as_str()) {
                                     ("io", "read") => return Type::Basic("string".to_string()),
                                     ("fs", "read") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
@@ -137,6 +137,13 @@ impl LLVMGenerator {
                                     ("time", "now") => return Type::Basic("int".to_string()),
                                     ("time", "sleep") => return Type::Basic("void".to_string()),
                                     ("time", "format") => return Type::Basic("string".to_string()),
+                                    ("env", "get") => return Type::Option(Box::new(Type::Basic("string".to_string()))),
+                                    ("env", "set") => return Type::Basic("void".to_string()),
+                                    ("env", "all") => return Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string()))),
+                                    ("process", "run") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
+                                    ("process", "exit") => return Type::Basic("void".to_string()),
+                                    ("process", "args") => return Type::List(Box::new(Type::Basic("string".to_string()))),
+                                    ("string", "from_bytes") => return Type::Basic("string".to_string()),
                                     _ => {}
                                 }
                             } else if let Some(f_decl) = self.functions.get(method_name) {
@@ -152,10 +159,11 @@ impl LLVMGenerator {
                             match method_name.as_str() {
                                 "len" => return Type::Basic("int".to_string()),
                                 "contains" | "starts_with" | "ends_with" => return Type::Basic("bool".to_string()),
-                                "upper" | "lower" | "trim" | "replace" | "slice" => return Type::Basic("string".to_string()),
+                                "upper" | "lower" | "trim" | "replace" | "slice" | "pad_left" | "pad_right" | "repeat" => return Type::Basic("string".to_string()),
                                 "split" => return Type::List(Box::new(Type::Basic("string".to_string()))),
                                 "to_int" => return Type::Option(Box::new(Type::Basic("int".to_string()))),
                                 "to_float" => return Type::Option(Box::new(Type::Basic("float".to_string()))),
+                                "to_bytes" => return Type::List(Box::new(Type::Basic("int".to_string()))),
                                 _ => {}
                             }
                         }
@@ -327,7 +335,6 @@ impl LLVMGenerator {
                 }
             }
             Expr::NamedArg { name: _, value } => self.infer_expr_type(value),
-            _ => Type::Basic("int".to_string()),
         }
     }
 

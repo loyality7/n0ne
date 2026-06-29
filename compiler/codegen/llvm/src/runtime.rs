@@ -1470,6 +1470,214 @@ char* n0_time_format(int64_t ts, const char* fmt) {
     return buf;
 }
 
+// Env stdlib
+#ifdef _WIN32
+char* getenv(const char* name);
+int _putenv_s(const char* name, const char* value);
+char*** __p__environ(void);
+#define environ (*__p__environ())
+#else
+#include <unistd.h>
+extern char** environ;
+#endif
+
+void* n0_env_get(const char* name) {
+    if (!name) return n0_make_none();
+    char* val = getenv(name);
+    if (!val) return n0_make_none();
+    size_t len = strlen(val);
+    char* copy = malloc(len + 1);
+    if (copy) strcpy(copy, val);
+    return n0_make_some((int64_t)copy);
+}
+
+void n0_env_set(const char* name, const char* value) {
+    if (!name || !value) return;
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void* n0_env_all(void) {
+    void* map = malloc(32);
+    if (!map) return NULL;
+    memset(map, 0, 32);
+    char** env = environ;
+    if (!env) return map;
+    while (*env) {
+        char* entry = *env;
+        char* eq = NULL;
+        for (char* p = entry; *p != '\0'; p++) {
+            if (*p == '=') {
+                eq = p;
+                break;
+            }
+        }
+        if (eq) {
+            size_t key_len = eq - entry;
+            char* key = malloc(key_len + 1);
+            if (key) {
+                memcpy(key, entry, key_len);
+                key[key_len] = '\0';
+            }
+            size_t val_len = strlen(eq + 1);
+            char* val = malloc(val_len + 1);
+            if (val) {
+                strcpy(val, eq + 1);
+            }
+            if (key && val) {
+                n0_map_set(map, key, (int64_t)val);
+            } else {
+                if (key) free(key);
+                if (val) free(val);
+            }
+        }
+        env++;
+    }
+    return map;
+}
+
+// Process stdlib
+void* n0_process_run(const char* cmd) {
+    if (!cmd) return n0_make_err("null command");
+    FILE* fp = popen(cmd, "r");
+    if (!fp) {
+        return n0_make_err("Failed to execute command");
+    }
+    char* res = malloc(4096);
+    size_t cap = 4096;
+    size_t len = 0;
+    while (1) {
+        if (len + 1024 >= cap) {
+            cap *= 2;
+            char* new_res = realloc(res, cap);
+            if (!new_res) {
+                free(res);
+                pclose(fp);
+                return n0_make_err("Out of memory");
+            }
+            res = new_res;
+        }
+        size_t n = fread(res + len, 1, 1024, fp);
+        if (n <= 0) break;
+        len += n;
+    }
+    res[len] = '\0';
+    pclose(fp);
+    return n0_make_ok(res);
+}
+
+void n0_process_exit(int64_t code) {
+    exit((int)code);
+}
+
+void* n0_process_args(void) {
+    void* list = n0_list_new();
+    if (!list) return NULL;
+    for (int i = 0; i < global_argc; i++) {
+        char* arg = global_argv[i];
+        if (arg) {
+            size_t len = strlen(arg);
+            char* copy = malloc(len + 1);
+            if (copy) {
+                strcpy(copy, arg);
+                n0_list_push(list, (int64_t)copy);
+            }
+        }
+    }
+    return list;
+}
+
+// String stdlib
+char* n0_str_pad_left(const char* s, int64_t n) {
+    if (!s) return "";
+    int64_t len = strlen(s);
+    if (len >= n) {
+        char* copy = malloc(len + 1);
+        if (copy) {
+            memcpy(copy, s, len);
+            copy[len] = '\0';
+        }
+        return copy;
+    }
+    char* res = malloc(n + 1);
+    if (!res) return NULL;
+    int64_t pad = n - len;
+    for (int64_t i = 0; i < pad; i++) {
+        res[i] = ' ';
+    }
+    memcpy(res + pad, s, len);
+    res[n] = '\0';
+    return res;
+}
+
+char* n0_str_pad_right(const char* s, int64_t n) {
+    if (!s) return "";
+    int64_t len = strlen(s);
+    if (len >= n) {
+        char* copy = malloc(len + 1);
+        if (copy) {
+            memcpy(copy, s, len);
+            copy[len] = '\0';
+        }
+        return copy;
+    }
+    char* res = malloc(n + 1);
+    if (!res) return NULL;
+    memcpy(res, s, len);
+    for (int64_t i = len; i < n; i++) {
+        res[i] = ' ';
+    }
+    res[n] = '\0';
+    return res;
+}
+
+char* n0_str_repeat(const char* s, int64_t n) {
+    if (!s) return "";
+    if (n <= 0) {
+        char* empty = malloc(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+    size_t len = strlen(s);
+    size_t new_len = len * n;
+    char* res = malloc(new_len + 1);
+    if (!res) return NULL;
+    char* p = res;
+    for (int64_t i = 0; i < n; i++) {
+        memcpy(p, s, len);
+        p += len;
+    }
+    *p = '\0';
+    return res;
+}
+
+void* n0_str_to_bytes(char* s) {
+    void* list = n0_list_new();
+    if (!list) return NULL;
+    if (!s) return list;
+    size_t len = strlen(s);
+    for (size_t i = 0; i < len; i++) {
+        n0_list_push(list, (int64_t)(unsigned char)s[i]);
+    }
+    return list;
+}
+
+char* n0_string_from_bytes(void* list) {
+    if (!list) return "";
+    int64_t len = n0_list_len(list);
+    char* res = malloc(len + 1);
+    if (!res) return NULL;
+    int64_t* data = (int64_t*)((int64_t*)list)[1];
+    for (int64_t i = 0; i < len; i++) {
+        res[i] = (char)data[i];
+    }
+    res[len] = '\0';
+    return res;
+}
+
 // HTTP Server Structures
 typedef struct {
     int port;

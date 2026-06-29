@@ -971,3 +971,130 @@ task main
     assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
     assert_eq!(res.stdout.trim(), "2023");
 }
+
+#[test]
+fn test_stdlib_env() {
+    let source = "
+use env
+task main
+    env.set(\"N0NE_TEST_KEY\", \"N0NE_TEST_VAL\")
+    v = env.get(\"N0NE_TEST_KEY\")
+    if v.is_some
+        show(v.unwrap())
+    
+    missing = env.get(\"NONEXISTENT_KEY_12345\")
+    if missing.is_none
+        show(\"missing works\")
+
+    all = env.all()
+    v_all = all.get(\"N0NE_TEST_KEY\")
+    if v_all.is_some
+        show(v_all.unwrap())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    let lines: Vec<&str> = res.stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], "N0NE_TEST_VAL");
+    assert_eq!(lines[1], "missing works");
+    assert_eq!(lines[2], "N0NE_TEST_VAL");
+}
+
+#[test]
+fn test_stdlib_process() {
+    let source = "
+use process
+task main
+    res = process.run(\"echo hello\")
+    if res.is_ok
+        show(res.unwrap().trim())
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "hello");
+}
+
+#[test]
+fn test_stdlib_process_exit() {
+    let source = "
+use process
+task main
+    process.exit(42)
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 42);
+}
+
+#[test]
+fn test_stdlib_process_args() {
+    let source = "
+use process
+task main
+    args = process.args()
+    if args.len() > 0
+        show(\"has args\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "has args");
+}
+
+#[test]
+fn test_stdlib_string_extra() {
+    let source = "
+use string
+task main
+    s1 = \"abc\".pad_left(5)
+    show(s1)
+    
+    s2 = \"abc\".pad_right(5)
+    show(s2)
+    
+    s3 = \"abc\".repeat(3)
+    show(s3)
+    
+    bytes = \"abc\".to_bytes()
+    show(bytes.len().to_string())
+    
+    s4 = string.from_bytes(bytes)
+    show(s4)
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    let lines: Vec<&str> = res.stdout.trim_end().lines().collect();
+    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[0], "  abc");
+    assert_eq!(lines[1], "abc  ");
+    assert_eq!(lines[2], "abcabcabc");
+    assert_eq!(lines[3], "3");
+    assert_eq!(lines[4], "abc");
+}
+
+#[test]
+fn test_diagnostic_formatting() {
+    let source = "task main\n    x = 10\n    x = \"hello\"\n";
+    let res = crate::helpers::compile_n0ne(source);
+    assert!(res.is_err());
+    let errs = res.unwrap_err();
+    let combined = errs.join("\n");
+    assert!(combined.contains("error[E001]: type mismatch"), "Actual stderr was:\n{}", combined);
+    assert!(combined.contains("-->"), "Actual stderr was:\n{}", combined);
+    assert!(combined.contains("3 |     x = \"hello\""), "Actual stderr was:\n{}", combined);
+    assert!(combined.contains("^"), "Actual stderr was:\n{}", combined);
+    assert!(combined.contains("hint: Ensure the assigned value matches the variable's type."), "Actual stderr was:\n{}", combined);
+}
+
+#[test]
+fn test_missing_return_paths_hint() {
+    let source = "
+fn add(a: int) -> int
+    if a > 0
+        return 1
+";
+    let res = crate::helpers::compile_n0ne(source);
+    assert!(res.is_err());
+    let errs = res.unwrap_err();
+    let combined = errs.join("\n");
+    assert!(combined.contains("error[E006]: missing return in non-void function 'add'"));
+    assert!(combined.contains("Missing return in paths: missing else branch"));
+}

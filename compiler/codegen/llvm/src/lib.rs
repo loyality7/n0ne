@@ -169,6 +169,23 @@ impl LLVMGenerator {
         self.globals.push_str("declare i64 @n0_time_now()\n");
         self.globals.push_str("declare void @n0_time_sleep(i64)\n");
         self.globals.push_str("declare ptr @n0_time_format(i64, ptr)\n");
+        
+        // Env stdlib
+        self.globals.push_str("declare ptr @n0_env_get(ptr)\n");
+        self.globals.push_str("declare void @n0_env_set(ptr, ptr)\n");
+        self.globals.push_str("declare ptr @n0_env_all()\n");
+        
+        // Process stdlib
+        self.globals.push_str("declare ptr @n0_process_run(ptr)\n");
+        self.globals.push_str("declare void @n0_process_exit(i64)\n");
+        self.globals.push_str("declare ptr @n0_process_args()\n");
+        
+        // String static and instance methods
+        self.globals.push_str("declare ptr @n0_string_from_bytes(ptr)\n");
+        self.globals.push_str("declare ptr @n0_str_pad_left(ptr, i64)\n");
+        self.globals.push_str("declare ptr @n0_str_pad_right(ptr, i64)\n");
+        self.globals.push_str("declare ptr @n0_str_repeat(ptr, i64)\n");
+        self.globals.push_str("declare ptr @n0_str_to_bytes(ptr)\n");
         // String primitive methods
         self.globals.push_str("declare i64 @n0_str_len(ptr)\n");
         self.globals.push_str("declare i64 @n0_str_contains(ptr, ptr)\n");

@@ -169,6 +169,19 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
             Symbol::fn_sym("sleep", vec![Type::Basic("int".to_string())], Type::Basic("void".to_string())),
             Symbol::fn_sym("format", vec![Type::Basic("int".to_string()), Type::Basic("string".to_string())], Type::Basic("string".to_string())),
         ]),
+        "env" => Some(vec![
+            Symbol::fn_sym("get", vec![Type::Basic("string".to_string())], Type::Option(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym("set", vec![Type::Basic("string".to_string()), Type::Basic("string".to_string())], Type::Basic("void".to_string())),
+            Symbol::fn_sym("all", vec![], Type::Map(Box::new(Type::Basic("string".to_string())), Box::new(Type::Basic("string".to_string())))),
+        ]),
+        "process" => Some(vec![
+            Symbol::fn_sym("run", vec![Type::Basic("string".to_string())], Type::Result(Box::new(Type::Basic("string".to_string())))),
+            Symbol::fn_sym("exit", vec![Type::Basic("int".to_string())], Type::Basic("void".to_string())),
+            Symbol::fn_sym("args", vec![], Type::List(Box::new(Type::Basic("string".to_string())))),
+        ]),
+        "string" => Some(vec![
+            Symbol::fn_sym("from_bytes", vec![Type::List(Box::new(Type::Basic("int".to_string())))], Type::Basic("string".to_string())),
+        ]),
         _ => None,
     }
 }
@@ -655,7 +668,7 @@ impl TypeChecker {
                         column: 0,
                         code: "E001".to_string(),
                         message: format!(
-                            "type mismatch: expected '{:?}', found '{:?}'",
+                            "type mismatch: expected '{}', found '{}'",
                             param.type_ann, default_ty
                         ),
                         hint: "Ensure the default value matches the parameter's type.".to_string(),
@@ -676,12 +689,18 @@ impl TypeChecker {
         // Check E006: missing return in non-void fn
         if decl.return_type.is_some() {
             if !self.has_return(&decl.body) {
+                let missing_paths = self.find_missing_return_paths(&decl.body);
+                let hint = if !missing_paths.is_empty() {
+                    format!("Missing return in paths: {}. Ensure all control flow paths return a value.", missing_paths.join(", "))
+                } else {
+                    "Add a return statement that matches the return type.".to_string()
+                };
                 self.errors.push(SemanticError {
                     line: 0,
                     column: 0,
                     code: "E006".to_string(),
                     message: format!("missing return in non-void function '{}'", decl.name),
-                    hint: "Add a return statement that matches the return type.".to_string(),
+                    hint,
                 });
             }
         }
@@ -756,7 +775,7 @@ impl TypeChecker {
                                                     column: 0,
                                                     code: "E001".to_string(),
                                                     message: format!(
-                                                        "type mismatch: expected '{:?}', found '{:?}'",
+                                                        "type mismatch: expected '{}', found '{}'",
                                                         existing_ty, field_ty
                                                     ),
                                                     hint: "Ensure the assigned value matches the variable's type.".to_string(),
@@ -771,7 +790,7 @@ impl TypeChecker {
                                                 column: 0,
                                                 code: "E001".to_string(),
                                                 message: format!(
-                                                    "type mismatch: expected '{:?}', found '{:?}'",
+                                                    "type mismatch: expected '{}', found '{}'",
                                                     existing_ty, field_ty
                                                 ),
                                                 hint: "Ensure the assigned value matches the variable's type.".to_string(),
@@ -786,7 +805,7 @@ impl TypeChecker {
                                     column: 0,
                                     code: "E001".to_string(),
                                     message: format!(
-                                        "type mismatch: expected tuple, found '{:?}'",
+                                        "type mismatch: expected tuple, found '{}'",
                                         rhs_type
                                     ),
                                     hint: "Cannot unpack a non-tuple value.".to_string(),
@@ -813,7 +832,7 @@ impl TypeChecker {
                             column: 0,
                             code: "E001".to_string(),
                             message: format!(
-                                "type mismatch: expected '{:?}', found '{:?}'",
+                                "type mismatch: expected '{}', found '{}'",
                                 lhs_type, rhs_type
                             ),
                             hint: "Ensure the assigned value matches the variable's type."
@@ -841,7 +860,7 @@ impl TypeChecker {
                         column: 0,
                         code: "E001".to_string(),
                         message: format!(
-                            "type mismatch: if condition expected 'bool', found '{:?}'",
+                            "type mismatch: if condition expected 'bool', found '{}'",
                             cond_type
                         ),
                         hint: "Use a boolean expression in if condition.".to_string(),
@@ -862,7 +881,7 @@ impl TypeChecker {
                             column: 0,
                             code: "E001".to_string(),
                             message: format!(
-                                "type mismatch: elif condition expected 'bool', found '{:?}'",
+                                "type mismatch: elif condition expected 'bool', found '{}'",
                                 c_type
                             ),
                             hint: "Use a boolean expression in elif condition.".to_string(),
@@ -907,7 +926,7 @@ impl TypeChecker {
                         column: 0,
                         code: "E001".to_string(),
                         message: format!(
-                            "type mismatch: while condition expected 'bool', found '{:?}'",
+                            "type mismatch: while condition expected 'bool', found '{}'",
                             cond_type
                         ),
                         hint: "Use a boolean expression in while condition.".to_string(),
@@ -960,7 +979,7 @@ impl TypeChecker {
                                     column: 0,
                                     code: "E001".to_string(),
                                     message: format!(
-                                        "type mismatch: match pattern type '{:?}' does not match expression type '{:?}'",
+                                        "type mismatch: match pattern type '{}' does not match expression type '{}'",
                                         arm_type, expr_type
                                     ),
                                     hint: "All match patterns must match the type of the matched expression.".to_string(),
@@ -977,7 +996,7 @@ impl TypeChecker {
                                             column: 0,
                                             code: "E001".to_string(),
                                             message: format!(
-                                                "type mismatch: match pattern variant '{}' returns '{:?}', but matched expression has type '{:?}'",
+                                                "type mismatch: match pattern variant '{}' returns '{}', but matched expression has type '{}'",
                                                 variant_name, rt, expr_type
                                             ),
                                             hint: "Enum variant must belong to the matched enum type.".to_string(),
@@ -1043,7 +1062,7 @@ impl TypeChecker {
                             column: 0,
                             code: "E001".to_string(),
                             message: format!(
-                                "type mismatch: expected return type '{:?}', found '{:?}'",
+                                "type mismatch: expected return type '{}', found '{}'",
                                 expected, actual
                             ),
                             hint: "Return a value that matches the function's signature."
@@ -1074,7 +1093,7 @@ impl TypeChecker {
                         line: 0,
                         column: 0,
                         code: "E001".to_string(),
-                        message: format!("guard condition must be a bool, found {:?}", cond_type),
+                        message: format!("guard condition must be a bool, found {}", cond_type),
                         hint: "Change the condition to evaluate to a boolean.".to_string(),
                     });
                 }
@@ -1201,7 +1220,7 @@ impl TypeChecker {
                                         column: 0,
                                         code: "E005".to_string(),
                                         message: format!(
-                                            "wrong argument type in call to '{}': expected '{:?}', found '{:?}'",
+                                            "wrong argument type in call to '{}': expected '{}', found '{}'",
                                             name, expected_type, arg_type
                                         ),
                                         hint: "Check the parameter types of the function."
@@ -1265,7 +1284,7 @@ impl TypeChecker {
                                                 column: 0,
                                                 code: "E005".to_string(),
                                                 message: format!(
-                                                    "wrong argument type in call to '{}.{}': expected '{:?}', found '{:?}'",
+                                                    "wrong argument type in call to '{}.{}': expected '{}', found '{}'",
                                                     mod_name, method_name, expected_type, arg_type
                                                 ),
                                                 hint: "Check the parameter types of the function.".to_string(),
@@ -1325,10 +1344,11 @@ impl TypeChecker {
                             match method_name.as_str() {
                                 "len" => return Type::Basic("int".to_string()),
                                 "contains" | "starts_with" | "ends_with" => return Type::Basic("bool".to_string()),
-                                "upper" | "lower" | "trim" | "replace" | "slice" => return Type::Basic("string".to_string()),
+                                "upper" | "lower" | "trim" | "replace" | "slice" | "pad_left" | "pad_right" | "repeat" => return Type::Basic("string".to_string()),
                                 "split" => return Type::List(Box::new(Type::Basic("string".to_string()))),
                                 "to_int" => return Type::Option(Box::new(Type::Basic("int".to_string()))),
                                 "to_float" => return Type::Option(Box::new(Type::Basic("float".to_string()))),
+                                "to_bytes" => return Type::List(Box::new(Type::Basic("int".to_string()))),
                                 _ => {}
                             }
                         }
@@ -1417,7 +1437,7 @@ impl TypeChecker {
                                                 line: 0,
                                                 column: 0,
                                                 code: "E005".to_string(),
-                                                message: format!("HttpServer.route first argument must be string, found {:?}", arg_types[0]),
+                                                message: format!("HttpServer.route first argument must be string, found {}", arg_types[0]),
                                                 hint: "Pass the route path string.".to_string(),
                                             });
                                         }
@@ -1552,7 +1572,7 @@ impl TypeChecker {
                                 line: *line,
                                 column: 0,
                                 code: "E018".to_string(),
-                                message: format!("list index must be an integer, found {:?}", index_ty),
+                                message: format!("list index must be an integer, found {}", index_ty),
                                 hint: "Use an integer index.".to_string(),
                             });
                         }
@@ -1564,7 +1584,7 @@ impl TypeChecker {
                                 line: *line,
                                 column: 0,
                                 code: "E018".to_string(),
-                                message: format!("map index must match key type {:?}, found {:?}", key_ty, index_ty),
+                                message: format!("map index must match key type {}, found {}", key_ty, index_ty),
                                 hint: "Use a key of the correct type.".to_string(),
                             });
                         }
@@ -1575,7 +1595,7 @@ impl TypeChecker {
                             line: *line,
                             column: 0,
                             code: "E019".to_string(),
-                            message: format!("cannot index type {:?}", inner_ty),
+                            message: format!("cannot index type {}", inner_ty),
                             hint: "Only lists and maps can be indexed.".to_string(),
                         });
                         Type::Basic("unknown".to_string())
@@ -1613,6 +1633,53 @@ impl TypeChecker {
             }
         }
         false
+    }
+
+    fn find_missing_return_paths(&self, block: &Block) -> Vec<String> {
+        let mut paths = Vec::new();
+        for stmt in &block.stmts {
+            match stmt {
+                Stmt::Return(_) => return vec![],
+                Stmt::If {
+                    then_branch,
+                    elifs,
+                    else_branch,
+                    ..
+                } => {
+                    let mut if_paths = Vec::new();
+                    if !self.has_return(then_branch) {
+                        if_paths.push("then branch".to_string());
+                    }
+                    for (i, (_, e_block)) in elifs.iter().enumerate() {
+                        if !self.has_return(e_block) {
+                            if_paths.push(format!("elif branch {}", i + 1));
+                        }
+                    }
+                    if let Some(eb) = else_branch {
+                        if !self.has_return(eb) {
+                            if_paths.push("else branch".to_string());
+                        }
+                    } else {
+                        if_paths.push("missing else branch".to_string());
+                    }
+                    paths.extend(if_paths);
+                }
+                Stmt::Match { cases, .. } => {
+                    for (i, (arm, body)) in cases.iter().enumerate() {
+                        if !self.has_return(body) {
+                            let arm_name = match arm {
+                                MatchArm::Wildcard => "wildcard pattern".to_string(),
+                                MatchArm::Variant { variant_name, .. } => format!("variant '{}'", variant_name),
+                                MatchArm::Literal(_) => format!("literal case {}", i + 1),
+                            };
+                            paths.push(format!("match arm {}", arm_name));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        paths
     }
 
     fn block_diverges(&self, block: &Block) -> bool {

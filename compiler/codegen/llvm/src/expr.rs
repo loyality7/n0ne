@@ -637,7 +637,7 @@ impl LLVMGenerator {
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() && self.global_consts.get(mod_name).is_none() {
-                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" || mod_name == "time" {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" || mod_name == "time" || mod_name == "env" || mod_name == "process" || mod_name == "string" {
                                 if mod_name == "io" && method_name == "show" {
                                     let first = args.first().unwrap();
                                     let arg_reg = self.gen_expr(first);
@@ -769,6 +769,61 @@ impl LLVMGenerator {
                                         self.body.push_str(&format!("    {} = call ptr @{}({})\n", r, fn_name, arg_regs.join(", ")));
                                         return r;
                                     }
+                                }
+
+                                // Env module — native i64/ptr, no ptr casting
+                                if mod_name == "env" {
+                                    let mut arg_regs = Vec::new();
+                                    for arg in args {
+                                        let reg = self.gen_expr(arg);
+                                        let ty = self.infer_expr_type(arg);
+                                        let llvm_ty = self.llvm_type(&ty);
+                                        arg_regs.push(format!("{} {}", llvm_ty, reg));
+                                    }
+                                    let fn_name = format!("n0_env_{}", method_name);
+                                    let r = self.next_reg();
+                                    if method_name == "set" {
+                                        self.body.push_str(&format!("    call void @{}({})\n", fn_name, arg_regs.join(", ")));
+                                        return "0".to_string();
+                                    } else {
+                                        self.body.push_str(&format!("    {} = call ptr @{}({})\n", r, fn_name, arg_regs.join(", ")));
+                                        return r;
+                                    }
+                                }
+
+                                // Process module — native i64/ptr, no ptr casting
+                                if mod_name == "process" {
+                                    let mut arg_regs = Vec::new();
+                                    for arg in args {
+                                        let reg = self.gen_expr(arg);
+                                        let ty = self.infer_expr_type(arg);
+                                        let llvm_ty = self.llvm_type(&ty);
+                                        arg_regs.push(format!("{} {}", llvm_ty, reg));
+                                    }
+                                    let fn_name = format!("n0_process_{}", method_name);
+                                    let r = self.next_reg();
+                                    if method_name == "exit" {
+                                        self.body.push_str(&format!("    call void @{}({})\n", fn_name, arg_regs.join(", ")));
+                                        return "0".to_string();
+                                    } else {
+                                        self.body.push_str(&format!("    {} = call ptr @{}({})\n", r, fn_name, arg_regs.join(", ")));
+                                        return r;
+                                    }
+                                }
+
+                                // String module — static methods, native i64/ptr, no ptr casting
+                                if mod_name == "string" {
+                                    let mut arg_regs = Vec::new();
+                                    for arg in args {
+                                        let reg = self.gen_expr(arg);
+                                        let ty = self.infer_expr_type(arg);
+                                        let llvm_ty = self.llvm_type(&ty);
+                                        arg_regs.push(format!("{} {}", llvm_ty, reg));
+                                    }
+                                    let fn_name = format!("n0_string_{}", method_name);
+                                    let r = self.next_reg();
+                                    self.body.push_str(&format!("    {} = call ptr @{}({})\n", r, fn_name, arg_regs.join(", ")));
+                                    return r;
                                 }
 
                                 let (fn_name, ret_llvm_ty) = match (mod_name.as_str(), method_name.as_str()) {
@@ -930,6 +985,22 @@ impl LLVMGenerator {
                                 }
                                 "to_int" | "to_float" => {
                                     mapped_fn_name = if method_name == "to_int" { "n0_str_to_int".to_string() } else { "n0_str_to_float".to_string() };
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "pad_left" => {
+                                    mapped_fn_name = "n0_str_pad_left".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "pad_right" => {
+                                    mapped_fn_name = "n0_str_pad_right".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "repeat" => {
+                                    mapped_fn_name = "n0_str_repeat".to_string();
+                                    ret_llvm_ty = "ptr".to_string();
+                                }
+                                "to_bytes" => {
+                                    mapped_fn_name = "n0_str_to_bytes".to_string();
                                     ret_llvm_ty = "ptr".to_string();
                                 }
                                 _ => {}
