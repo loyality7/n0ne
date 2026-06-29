@@ -1098,3 +1098,120 @@ fn add(a: int) -> int
     assert!(combined.contains("error[E006]: missing return in non-void function 'add'"));
     assert!(combined.contains("Missing return in paths: missing else branch"));
 }
+
+#[test]
+fn test_lsp_server() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let n0ne_path = env!("CARGO_BIN_EXE_n0ne");
+
+    let mut child = Command::new(n0ne_path)
+        .arg("lsp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("failed to start lsp server");
+
+    let mut stdin = child.stdin.take().expect("failed to get stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("failed to get stdout"));
+
+    let write_req = |stdin: &mut std::process::ChildStdin, req: &serde_json::Value| {
+        let payload = serde_json::to_string(req).unwrap();
+        let msg = format!("Content-Length: {}\r\n\r\n{}", payload.len(), payload);
+        stdin.write_all(msg.as_bytes()).unwrap();
+        stdin.flush().unwrap();
+    };
+
+    let read_resp = |stdout: &mut BufReader<std::process::ChildStdout>| -> serde_json::Value {
+        let mut header = String::new();
+        loop {
+            let mut line = String::new();
+            stdout.read_line(&mut line).unwrap();
+            if line == "\r\n" || line == "\n" {
+                break;
+            }
+            header.push_str(&line);
+        }
+
+        let mut content_length = 0;
+        for line in header.lines() {
+            if line.to_lowercase().starts_with("content-length:") {
+                let parts: Vec<&str> = line.split(':').collect();
+                content_length = parts[1].trim().parse::<usize>().unwrap();
+            }
+        }
+
+        let mut buf = vec![0u8; content_length];
+        stdout.read_exact(&mut buf).unwrap();
+        serde_json::from_slice(&buf).unwrap()
+    };
+
+    let init_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    });
+    write_req(&mut stdin, &init_req);
+    let init_resp = read_resp(&mut stdout);
+    assert_eq!(init_resp["id"], 1);
+    assert!(init_resp["result"]["capabilities"]["completionProvider"].is_object());
+
+    let source = "task main\n    x = 10\n    x = \"hello\"\n";
+    let open_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": "file:///test.n0",
+                "text": source
+            }
+        }
+    });
+    write_req(&mut stdin, &open_req);
+    let open_resp = read_resp(&mut stdout);
+    assert_eq!(open_resp["method"], "textDocument/publishDiagnostics");
+    assert!(open_resp["params"]["diagnostics"].is_array());
+    let diagnostics = open_resp["params"]["diagnostics"].as_array().unwrap();
+    assert!(!diagnostics.is_empty());
+    assert!(diagnostics[0]["message"].as_str().unwrap().contains("type mismatch"));
+
+    let comp_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "textDocument/completion",
+        "params": {
+            "textDocument": {
+                "uri": "file:///test.n0"
+            },
+            "position": {
+                "line": 1,
+                "character": 5
+            }
+        }
+    });
+    write_req(&mut stdin, &comp_req);
+    let comp_resp = read_resp(&mut stdout);
+    assert_eq!(comp_resp["id"], 2);
+    let completions = comp_resp["result"].as_array().unwrap();
+    assert!(completions.iter().any(|item| item["label"] == "fn"));
+
+    let shutdown_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "shutdown"
+    });
+    write_req(&mut stdin, &shutdown_req);
+    let shutdown_resp = read_resp(&mut stdout);
+    assert_eq!(shutdown_resp["id"], 3);
+
+    let exit_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "exit"
+    });
+    write_req(&mut stdin, &exit_req);
+
+    let status = child.wait().unwrap();
+    assert!(status.success());
+}

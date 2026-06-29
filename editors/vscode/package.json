@@ -1,0 +1,33 @@
+{
+  "name": "n0ne-lsp",
+  "displayName": "n0ne Language Support",
+  "description": "Language support for the n0ne programming language",
+  "version": "0.1.0",
+  "publisher": "n0ne",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:n0ne"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "n0ne",
+      "aliases": ["n0ne", "n0"],
+      "extensions": [".n0", ".n0ne"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "n0ne",
+      "scopeName": "source.n0ne",
+      "path": "./syntaxes/n0ne.tmLanguage.json"
+    }]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^7.0.0"
+  }
+}

@@ -1,3 +1,5 @@
+mod lsp;
+
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,6 +42,8 @@ enum Commands {
     Update,
     /// Print version
     Version,
+    /// Start Language Server
+    Lsp,
 }
 
 fn main() {
@@ -108,6 +112,12 @@ fn main() {
         }
         Commands::Version => {
             println!("n0ne version {}", env!("CARGO_PKG_VERSION"));
+        }
+        Commands::Lsp => {
+            if let Err(e) = lsp::start_lsp_server() {
+                eprintln!("LSP server error: {}", e);
+                exit(1);
+            }
         }
     }
 }
@@ -253,7 +263,7 @@ fn print_formatted_diagnostic(
     }
 }
 
-fn parse_syntax_panic(msg: &str) -> Option<(String, usize, usize, String, String)> {
+pub(crate) fn parse_syntax_panic(msg: &str) -> Option<(String, usize, usize, String, String)> {
     if msg.starts_with("Lexical error") {
         let code = "E100".to_string();
         let hint = "Check syntax and indentation.".to_string();
@@ -312,7 +322,7 @@ fn parse_line_col_from_msg(msg: &str) -> Option<(usize, usize)> {
     None
 }
 
-fn resolve_location(source: &str, err: &mut sema::SemanticError) {
+pub(crate) fn resolve_location(source: &str, err: &mut sema::SemanticError) {
     if err.line != 0 {
         if err.column == 0 {
             err.column = 1;
@@ -512,7 +522,7 @@ fn resolve_location(source: &str, err: &mut sema::SemanticError) {
     err.column = 1;
 }
 
-fn extract_type_mismatch_names(msg: &str) -> Option<(String, String)> {
+pub(crate) fn extract_type_mismatch_names(msg: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = msg.split('\'').collect();
     if parts.len() >= 5 {
         Some((parts[1].to_string(), parts[3].to_string()))
@@ -521,7 +531,7 @@ fn extract_type_mismatch_names(msg: &str) -> Option<(String, String)> {
     }
 }
 
-fn extract_single_quoted_name(msg: &str) -> Option<String> {
+pub(crate) fn extract_single_quoted_name(msg: &str) -> Option<String> {
     let parts: Vec<&str> = msg.split('\'').collect();
     if parts.len() >= 3 {
         Some(parts[1].to_string())
@@ -530,7 +540,7 @@ fn extract_single_quoted_name(msg: &str) -> Option<String> {
     }
 }
 
-fn find_word(line: &str, word: &str) -> Option<usize> {
+pub(crate) fn find_word(line: &str, word: &str) -> Option<usize> {
     let mut start = 0;
     while let Some(idx) = line[start..].find(word) {
         let abs_idx = start + idx;

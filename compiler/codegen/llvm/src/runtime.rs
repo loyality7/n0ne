@@ -1351,6 +1351,7 @@ unsigned int _getpid(void);
 #include <math.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdlib.h>
 #endif
 
 static int n0_math_seeded = 0;
@@ -1401,7 +1402,11 @@ double n0_math_clamp(double val, double low, double high) {
 
 double n0_math_random(void) {
     n0_math_seed_once();
+#ifdef _WIN32
     return (double)rand() / (double)32767;
+#else
+    return (double)rand() / (double)RAND_MAX;
+#endif
 }
 
 int64_t n0_math_random_int(int64_t min_val, int64_t max_val) {
