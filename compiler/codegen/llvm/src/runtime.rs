@@ -1409,6 +1409,67 @@ int64_t n0_math_random_int(int64_t min_val, int64_t max_val) {
     return min_val + (rand() % (max_val - min_val + 1));
 }
 
+// Time stdlib
+#ifdef _WIN32
+int64_t _time64(int64_t* timer);
+void __stdcall Sleep(unsigned long dwMilliseconds);
+struct tm {
+   int tm_sec;
+   int tm_min;
+   int tm_hour;
+   int tm_mday;
+   int tm_mon;
+   int tm_year;
+   int tm_wday;
+   int tm_yday;
+   int tm_isdst;
+};
+struct tm* _localtime64(const int64_t* sourceTime);
+size_t strftime(char* str, size_t maxsize, const char* format, const struct tm* timeptr);
+#else
+#include <time.h>
+#include <unistd.h>
+#endif
+
+int64_t n0_time_now(void) {
+#ifdef _WIN32
+    return _time64(NULL);
+#else
+    return (int64_t)time(NULL);
+#endif
+}
+
+void n0_time_sleep(int64_t ms) {
+    if (ms <= 0) return;
+#ifdef _WIN32
+    Sleep((unsigned long)ms);
+#else
+    usleep((unsigned int)(ms * 1000));
+#endif
+}
+
+char* n0_time_format(int64_t ts, const char* fmt) {
+    struct tm* tm_info;
+#ifdef _WIN32
+    tm_info = _localtime64(&ts);
+#else
+    time_t t = (time_t)ts;
+    tm_info = localtime(&t);
+#endif
+    if (!tm_info) {
+        char* empty = malloc(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+    char* buf = malloc(1024);
+    if (!buf) return NULL;
+    size_t written = strftime(buf, 1024, fmt, tm_info);
+    if (written == 0) {
+        buf[0] = '\0';
+    }
+    return buf;
+}
+
 // HTTP Server Structures
 typedef struct {
     int port;

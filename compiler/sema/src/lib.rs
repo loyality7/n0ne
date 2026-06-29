@@ -164,6 +164,11 @@ pub fn get_stdlib_symbols(module: &str) -> Option<Vec<Symbol>> {
             Symbol { name: "PI".to_string(), info: SymbolInfo::Variable { ty: Type::Basic("float".to_string()), used: false } },
             Symbol { name: "E".to_string(), info: SymbolInfo::Variable { ty: Type::Basic("float".to_string()), used: false } },
         ]),
+        "time" => Some(vec![
+            Symbol::fn_sym("now", vec![], Type::Basic("int".to_string())),
+            Symbol::fn_sym("sleep", vec![Type::Basic("int".to_string())], Type::Basic("void".to_string())),
+            Symbol::fn_sym("format", vec![Type::Basic("int".to_string()), Type::Basic("string".to_string())], Type::Basic("string".to_string())),
+        ]),
         _ => None,
     }
 }

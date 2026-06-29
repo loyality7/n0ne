@@ -637,7 +637,7 @@ impl LLVMGenerator {
                 } else if let Expr::FieldAccess { expr: receiver, field: method_name } = &**callee {
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() && self.global_consts.get(mod_name).is_none() {
-                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" || mod_name == "time" {
                                 if mod_name == "io" && method_name == "show" {
                                     let first = args.first().unwrap();
                                     let arg_reg = self.gen_expr(first);
@@ -746,6 +746,29 @@ impl LLVMGenerator {
                                         self.body.push_str(&format!("    {} = call double @{}({})\n", r, fn_name, arg_regs.join(", ")));
                                     }
                                     return r;
+                                }
+
+                                // Time module — native i64/ptr, no ptr casting
+                                if mod_name == "time" {
+                                    let mut arg_regs = Vec::new();
+                                    for arg in args {
+                                        let reg = self.gen_expr(arg);
+                                        let ty = self.infer_expr_type(arg);
+                                        let llvm_ty = self.llvm_type(&ty);
+                                        arg_regs.push(format!("{} {}", llvm_ty, reg));
+                                    }
+                                    let fn_name = format!("n0_time_{}", method_name);
+                                    let r = self.next_reg();
+                                    if method_name == "sleep" {
+                                        self.body.push_str(&format!("    call void @{}({})\n", fn_name, arg_regs.join(", ")));
+                                        return "0".to_string();
+                                    } else if method_name == "now" {
+                                        self.body.push_str(&format!("    {} = call i64 @{}({})\n", r, fn_name, arg_regs.join(", ")));
+                                        return r;
+                                    } else if method_name == "format" {
+                                        self.body.push_str(&format!("    {} = call ptr @{}({})\n", r, fn_name, arg_regs.join(", ")));
+                                        return r;
+                                    }
                                 }
 
                                 let (fn_name, ret_llvm_ty) = match (mod_name.as_str(), method_name.as_str()) {

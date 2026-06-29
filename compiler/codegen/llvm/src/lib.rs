@@ -165,6 +165,10 @@ impl LLVMGenerator {
         self.globals.push_str("declare double @n0_math_random()\n");
         self.globals.push_str("declare i64 @n0_math_random_int(i64, i64)\n");
         
+        // Time stdlib
+        self.globals.push_str("declare i64 @n0_time_now()\n");
+        self.globals.push_str("declare void @n0_time_sleep(i64)\n");
+        self.globals.push_str("declare ptr @n0_time_format(i64, ptr)\n");
         // String primitive methods
         self.globals.push_str("declare i64 @n0_str_len(ptr)\n");
         self.globals.push_str("declare i64 @n0_str_contains(ptr, ptr)\n");

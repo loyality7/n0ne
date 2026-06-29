@@ -931,3 +931,43 @@ task main
     assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
     assert_eq!(res.stdout.trim(), "in range");
 }
+
+#[test]
+fn test_stdlib_time_now() {
+    let source = "
+use time
+task main
+    t = time.now()
+    if t > 1700000000
+        show(\"valid timestamp\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "valid timestamp");
+}
+
+#[test]
+fn test_stdlib_time_sleep() {
+    let source = "
+use time
+task main
+    time.sleep(10)
+    show(\"slept\")
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "slept");
+}
+
+#[test]
+fn test_stdlib_time_format() {
+    let source = "
+use time
+task main
+    formatted = time.format(1700000000, \"%Y\")
+    show(formatted)
+";
+    let res = crate::helpers::run_n0ne(source);
+    assert_eq!(res.exit_code, 0, "Exit code mismatch. Stderr:\n{}", res.stderr);
+    assert_eq!(res.stdout.trim(), "2023");
+}

@@ -117,7 +117,7 @@ impl LLVMGenerator {
                     }
                     if let Expr::Ident(mod_name) = &**receiver {
                         if self.variables.get(mod_name).is_none() {
-                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" {
+                            if mod_name == "io" || mod_name == "fs" || mod_name == "json" || mod_name == "http" || mod_name == "math" || mod_name == "time" {
                                 match (mod_name.as_str(), method_name.as_str()) {
                                     ("io", "read") => return Type::Basic("string".to_string()),
                                     ("fs", "read") => return Type::Result(Box::new(Type::Basic("string".to_string()))),
@@ -134,6 +134,9 @@ impl LLVMGenerator {
                                     ("http", "server") => return Type::Basic("HttpServer".to_string()),
                                     ("math", "random_int") => return Type::Basic("int".to_string()),
                                     ("math", "abs") | ("math", "sqrt") | ("math", "floor") | ("math", "ceil") | ("math", "round") | ("math", "min") | ("math", "max") | ("math", "clamp") | ("math", "random") => return Type::Basic("float".to_string()),
+                                    ("time", "now") => return Type::Basic("int".to_string()),
+                                    ("time", "sleep") => return Type::Basic("void".to_string()),
+                                    ("time", "format") => return Type::Basic("string".to_string()),
                                     _ => {}
                                 }
                             } else if let Some(f_decl) = self.functions.get(method_name) {
