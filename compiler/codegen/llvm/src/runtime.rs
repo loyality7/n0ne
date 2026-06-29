@@ -1350,6 +1350,7 @@ unsigned int _getpid(void);
 #else
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
 #endif
 
 static int n0_math_seeded = 0;
@@ -1822,8 +1823,13 @@ void n0_start(void* server) {
 
     while (1) {
         struct sockaddr_in client_addr;
+#ifdef _WIN32
         int addr_len = sizeof(client_addr);
         SOCKET client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &addr_len);
+#else
+        socklen_t addr_len = sizeof(client_addr);
+        SOCKET client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &addr_len);
+#endif
         if (client_fd == INVALID_SOCKET) {
             continue;
         }
